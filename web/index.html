@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>iMessage Stats</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <input type="text" id="search" placeholder="search...">
+    <ul id="contact-list"></ul>
+  </aside>
+
+  <main class="content">
+    <div id="welcome">
+      <span>select a contact</span>
+    </div>
+
+    <div id="chart-container" style="display: none;">
+      <div class="chart-header">
+        <span id="contact-name"></span>
+        <div class="controls">
+          <div class="toggle">
+            <button data-view="year">year</button>
+            <button data-view="month" class="active">month</button>
+          </div>
+          <div class="stats">
+            <span><em id="stat-total">0</em> total</span>
+            <span class="sent"><em id="stat-sent">0</em> sent</span>
+            <span class="received"><em id="stat-received">0</em> recv</span>
+          </div>
+        </div>
+      </div>
+      <div class="chart-wrapper">
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

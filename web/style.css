@@ -1,0 +1,202 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg: #0a0a0a;
+  --bg-alt: #111;
+  --border: #222;
+  --text: #666;
+  --text-bright: #999;
+  --accent: #ddd;
+  --green: #34d399;
+  --blue: #60a5fa;
+}
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: "SF Mono", "Monaco", "Inconsolata", "Fira Code", monospace;
+  font-size: 13px;
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 280px;
+  height: 100%;
+  background: var(--bg-alt);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+#search {
+  width: 100%;
+  padding: 12px 16px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-bright);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+#search::placeholder {
+  color: #333;
+}
+
+#contact-list {
+  list-style: none;
+  overflow-y: auto;
+  flex: 1;
+}
+
+#contact-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+#contact-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#contact-list::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+
+#contact-list li {
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+
+#contact-list li:hover {
+  background: #1a1a1a;
+}
+
+#contact-list li.active {
+  background: #1a1a1a;
+}
+
+#contact-list li.active .contact-name {
+  color: var(--accent);
+}
+
+.contact-name {
+  color: var(--text-bright);
+  margin-bottom: 2px;
+}
+
+.contact-meta {
+  font-size: 11px;
+  color: #444;
+}
+
+/* Content */
+.content {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+#welcome {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333;
+}
+
+#chart-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 24px;
+  min-height: 0;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+#contact-name {
+  color: var(--accent);
+  font-size: 14px;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.toggle {
+  display: flex;
+  gap: 2px;
+  background: #1a1a1a;
+  padding: 2px;
+  border-radius: 4px;
+}
+
+.toggle button {
+  background: transparent;
+  border: none;
+  color: #555;
+  font-family: inherit;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.toggle button:hover {
+  color: #888;
+}
+
+.toggle button.active {
+  background: #333;
+  color: #ccc;
+}
+
+.stats {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+}
+
+.stats em {
+  font-style: normal;
+  color: var(--text-bright);
+}
+
+.stats .sent em {
+  color: var(--green);
+}
+
+.stats .received em {
+  color: var(--blue);
+}
+
+.chart-wrapper {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}

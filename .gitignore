@@ -1,0 +1,25 @@
+# Generated data (contains personal information)
+web/data/contacts.json
+web/data/messages/
+
+# User's copied databases (contains personal information)
+chat.db
+Sources/
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+.env.local
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
