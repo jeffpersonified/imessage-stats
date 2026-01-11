@@ -60,4 +60,4 @@ A local-only tool that analyzes your iMessage history and visualizes messaging p
 - Python uses argparse for CLI options
 - JS uses vanilla DOM manipulation, no framework
 - Chart.js with custom plugins for tooltip positioning and hover highlights
-- Consistent color scheme: sent=#FFCC00 (yellow), received=#BF5AF2 (purple)
+- Consistent color scheme: sent=#FF4444 (red), received=#4488FF (blue), heatmap=green

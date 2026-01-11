@@ -11,8 +11,8 @@
   --text: #555;
   --text-bright: #888;
   --accent: #ccc;
-  --sent: #FFCC00;
-  --received: #BF5AF2;
+  --sent: #FF4444;
+  --received: #4488FF;
 }
 
 html, body {

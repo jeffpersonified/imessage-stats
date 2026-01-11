@@ -355,9 +355,9 @@ function renderHeatmap(heatmap) {
       const value = heatmap[day]?.[hour] || 0;
       const intensity = max > 0 ? value / max : 0;
 
-      // Blue with varying opacity
+      // Green with varying opacity
       const alpha = 0.08 + intensity * 0.92;
-      ctx.fillStyle = `rgba(56, 132, 255, ${alpha})`;
+      ctx.fillStyle = `rgba(76, 175, 80, ${alpha})`;
 
       const x = hour * cellWidth;
       const y = day * cellHeight;
@@ -469,7 +469,7 @@ function renderChart() {
         {
           label: 'sent',
           data: data.map(d => d.sent),
-          backgroundColor: '#FFCC00',
+          backgroundColor: '#FF4444',
           borderRadius: 2,
           barPercentage: 0.7,
           categoryPercentage: 0.8,
@@ -477,7 +477,7 @@ function renderChart() {
         {
           label: 'recv',
           data: data.map(d => d.received),
-          backgroundColor: '#BF5AF2',
+          backgroundColor: '#4488FF',
           borderRadius: 2,
           barPercentage: 0.7,
           categoryPercentage: 0.8,
