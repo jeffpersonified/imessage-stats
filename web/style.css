@@ -1353,9 +1353,9 @@ section p {
 }
 
 .global-emoji-grid {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
   gap: 12px;
-  flex-wrap: wrap;
 }
 
 .global-emoji-item {
@@ -1366,7 +1366,6 @@ section p {
   padding: 12px 16px;
   background: var(--bg-alt);
   border: 1px solid var(--border);
-  min-width: 60px;
 }
 
 .global-emoji-item .emoji {
