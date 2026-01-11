@@ -179,6 +179,35 @@ body {
 
 .sidebar-header {
   padding-top: 0; /* Everyone tab provides top padding now */
+  border-bottom: 1px solid var(--border);
+}
+
+.refresh-btn {
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-bright);
+  cursor: pointer;
+  transition: color 0.15s;
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+}
+
+.refresh-btn:hover {
+  color: var(--accent);
+}
+
+.refresh-btn:active {
+  transform: scale(0.95);
+}
+
+.refresh-btn.spinning svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* Everyone tab */
@@ -188,6 +217,13 @@ body {
   border-bottom: 1px solid var(--border);
   transition: background 0.1s;
   -webkit-app-region: no-drag;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.everyone-tab-content {
+  flex: 1;
 }
 
 .everyone-tab:hover {
@@ -217,7 +253,6 @@ body {
   padding: 12px 16px;
   background: transparent;
   border: none;
-  border-bottom: 1px solid var(--border);
   color: var(--text-bright);
   font-family: inherit;
   font-size: 13px;

@@ -48,8 +48,15 @@
   <!-- Main app -->
   <aside class="sidebar">
     <div id="everyone-tab" class="everyone-tab">
-      <div class="tab-name">iMessage Stats</div>
-      <div class="tab-meta" id="everyone-total"></div>
+      <div class="everyone-tab-content">
+        <div class="tab-name">iMessage Stats</div>
+        <div class="tab-meta" id="everyone-total"></div>
+      </div>
+      <button id="refresh-btn" class="refresh-btn" title="Refresh data">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 12a9 9 0 11-2.63-6.36M21 3v6h-6"/>
+        </svg>
+      </button>
     </div>
     <div class="sidebar-header">
       <input type="text" id="search" placeholder="Search...">

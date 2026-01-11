@@ -66,6 +66,7 @@ const loadingMessage = document.getElementById('loading-message') as HTMLParagra
 const loadingProgress = document.getElementById('loading-progress') as HTMLDivElement;
 const contactList = document.getElementById('contact-list') as HTMLUListElement;
 const searchInput = document.getElementById('search') as HTMLInputElement;
+const refreshBtn = document.getElementById('refresh-btn') as HTMLButtonElement;
 const welcome = document.getElementById('welcome') as HTMLDivElement;
 const chartContainer = document.getElementById('chart-container') as HTMLDivElement;
 const contactHeader = document.getElementById('contact-header') as HTMLElement;
@@ -935,14 +936,19 @@ async function refreshData() {
   hideLoading();
 }
 
+// Manual refresh handler
+async function handleRefresh() {
+  refreshBtn.classList.add('spinning');
+  await refreshData();
+  refreshBtn.classList.remove('spinning');
+}
+
 // Initialize
 async function init() {
-  // Listen for database changes
-  window.electronAPI.data.onDatabaseChanged(() => {
-    refreshData();
-  });
+  // Manual refresh button
+  refreshBtn.addEventListener('click', handleRefresh);
 
-  // Also listen for permission status events (for future updates)
+  // Listen for permission status events (for future updates)
   window.electronAPI.permissions.onStatus(async (status) => {
     if (status.hasFullDiskAccess) {
       hideOnboarding();
