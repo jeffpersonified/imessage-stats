@@ -1,4 +1,4 @@
-import { access, constants } from 'fs/promises';
+import { open } from 'fs/promises';
 import { homedir } from 'os';
 import { join } from 'path';
 import { shell } from 'electron';
@@ -8,13 +8,21 @@ export const CONTACTS_PATH = join(homedir(), 'Library/Application Support/Addres
 
 /**
  * Check if app has Full Disk Access by attempting to read chat.db
+ * We must actually open and read the file (not just check access) to trigger
+ * macOS to add the app to the Full Disk Access list in System Settings.
  */
 export async function checkFullDiskAccess(): Promise<boolean> {
+  let fileHandle;
   try {
-    await access(CHAT_DB_PATH, constants.R_OK);
+    fileHandle = await open(CHAT_DB_PATH, 'r');
+    // Read a single byte to confirm we have actual read access
+    const buffer = Buffer.alloc(1);
+    await fileHandle.read(buffer, 0, 1, 0);
     return true;
   } catch {
     return false;
+  } finally {
+    await fileHandle?.close();
   }
 }
 
@@ -23,7 +31,9 @@ export async function checkFullDiskAccess(): Promise<boolean> {
  */
 export async function checkContactsAccess(): Promise<boolean> {
   try {
-    await access(CONTACTS_PATH, constants.R_OK);
+    // Try to open the directory to trigger macOS permission registration
+    const dirHandle = await open(CONTACTS_PATH, 'r');
+    await dirHandle.close();
     return true;
   } catch {
     return false;
