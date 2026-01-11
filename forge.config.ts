@@ -15,6 +15,18 @@ const config: ForgeConfig = {
     appBundleId: 'com.imessage-stats.app',
     icon: './resources/icon',
     extraResource: ['./electron/preload/preload.js'],
+    osxSign: {
+      entitlements: './build/entitlements.mac.plist',
+      entitlementsInherit: './build/entitlements.mac.plist',
+      gatekeeperAssess: false,
+      hardenedRuntime: true,
+      identity: process.env.APPLE_IDENTITY || 'Developer ID Application',
+    },
+    osxNotarize: process.env.APPLE_ID ? {
+      appleId: process.env.APPLE_ID,
+      appleIdPassword: process.env.APPLE_PASSWORD,
+      teamId: process.env.APPLE_TEAM_ID,
+    } : undefined,
   },
   rebuildConfig: {},
   makers: [

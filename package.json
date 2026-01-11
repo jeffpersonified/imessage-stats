@@ -10,7 +10,12 @@
     "publish": "electron-forge publish",
     "postinstall": "electron-rebuild"
   },
-  "keywords": ["imessage", "stats", "visualization", "electron"],
+  "keywords": [
+    "imessage",
+    "stats",
+    "visualization",
+    "electron"
+  ],
   "author": "",
   "license": "MIT",
   "devDependencies": {
@@ -19,6 +24,7 @@
     "@electron-forge/maker-zip": "^7.4.0",
     "@electron-forge/plugin-auto-unpack-natives": "^7.4.0",
     "@electron-forge/plugin-webpack": "^7.4.0",
+    "@electron/notarize": "^3.1.1",
     "@electron/rebuild": "^3.6.0",
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^20.14.0",

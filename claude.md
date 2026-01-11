@@ -55,6 +55,45 @@ A local-only tool that analyzes your iMessage history and visualizes messaging p
 ./scripts/serve 3000         # Custom port
 ```
 
+## Electron App
+
+The project includes an Electron wrapper for native macOS integration.
+
+### Development
+```bash
+npm install                  # Install dependencies
+npm start                    # Run in development mode
+npm run package              # Create unsigned .app
+npm run make                 # Create distributable (DMG/ZIP)
+```
+
+### Code Signing & Notarization
+
+To distribute the app without users seeing "app is damaged" warnings, you must sign and notarize.
+
+**Requirements:**
+- Apple Developer account ($99/year)
+- Developer ID Application certificate installed in Keychain
+
+**Environment variables:**
+```bash
+export APPLE_ID="your@email.com"           # Apple Developer email
+export APPLE_PASSWORD="xxxx-xxxx-xxxx"     # App-specific password (not your Apple ID password)
+export APPLE_TEAM_ID="XXXXXXXXXX"          # 10-character Team ID from developer.apple.com
+export APPLE_IDENTITY="Developer ID Application: Your Name (TEAMID)"  # Optional, auto-detected
+```
+
+**Creating an app-specific password:**
+1. Go to appleid.apple.com → Sign-In and Security → App-Specific Passwords
+2. Generate a new password for "Electron Notarization"
+
+**Build signed app:**
+```bash
+APPLE_ID=... APPLE_PASSWORD=... APPLE_TEAM_ID=... npm run make
+```
+
+The notarization process takes 2-5 minutes. The resulting DMG will pass Gatekeeper.
+
 ## Code Conventions
 
 - Python uses argparse for CLI options
