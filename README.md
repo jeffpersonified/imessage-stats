@@ -63,6 +63,38 @@ This exports your data, starts a local server, and opens your browser.
 ./scripts/serve 3000            # Use a different port
 ```
 
+## LLM Analysis (Optional)
+
+Use AI to extract conversation themes and relationship insights for each contact. This feature analyzes message samples to identify what you talk about, how relationships have evolved, and generates personalized summaries.
+
+### How it works
+
+When enabled, the script samples messages from each contact (up to 1000 by default), sends them to Claude Haiku for analysis, and generates:
+
+- **Conversation themes** - Specific topics you discuss (e.g., "weekend plans", "work projects")
+- **Relationship summary** - A personalized description of your conversations
+- **Yearly analysis** - How themes changed over time
+- **Relationship evolution** - How your relationship has deepened or shifted
+
+### Setup
+
+1. Get an API key from [console.anthropic.com](https://console.anthropic.com/)
+
+2. Add it to your `.env` file:
+
+```bash
+cp .env.example .env
+# Edit .env and add your ANTHROPIC_API_KEY
+```
+
+3. Run the start script - it will prompt you to enable LLM analysis if an API key is detected.
+
+### Cost considerations
+
+LLM analysis uses the Claude Haiku model and incurs API costs based on the number of contacts and their message history. We recommend declining the LLM analysis prompt on your first run to see how many contacts and messages you have before deciding to enable it.
+
+**Rough cost estimate:** Processing 50 contacts with several years of history each (totaling ~100,000 messages) costs approximately **$3-5**. Costs scale with the number of contacts analyzed and years of message history per contact (each year gets its own analysis).
+
 ## Notion Sync (Optional)
 
 Sync your stats to a Notion database for easy sharing or further analysis.
