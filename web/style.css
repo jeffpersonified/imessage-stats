@@ -16,8 +16,8 @@
   --text: #555;
   --text-bright: #888;
   --accent: #ccc;
-  --sent: #FF4444;
-  --received: #4488FF;
+  --sent: #4488FF;
+  --received: #FF4444;
 }
 
 html, body {
@@ -726,11 +726,11 @@ section p {
 }
 
 .domain-tag.sent-domain {
-  border-color: rgba(255, 204, 0, 0.3);
+  border-color: rgba(68, 136, 255, 0.3);
 }
 
 .domain-tag.received-domain {
-  border-color: rgba(191, 90, 242, 0.3);
+  border-color: rgba(255, 68, 68, 0.3);
 }
 
 .domain-count {
@@ -778,11 +778,11 @@ section p {
 }
 
 .keyword-tag.sent-keyword {
-  border-color: rgba(255, 204, 0, 0.3);
+  border-color: rgba(68, 136, 255, 0.3);
 }
 
 .keyword-tag.received-keyword {
-  border-color: rgba(191, 90, 242, 0.3);
+  border-color: rgba(255, 68, 68, 0.3);
 }
 
 .no-keywords {
@@ -1154,7 +1154,7 @@ section p {
   padding: 0;
   width: 480px;
   max-width: 90vw;
-  max-height: 80vh;
+  height: 80vh;
   position: fixed;
   top: 50%;
   left: 50%;
@@ -1173,8 +1173,10 @@ section p {
 
 .links-dialog-body {
   flex: 1;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: 0;
+  min-width: 0;
 }
 
 /* Scrollbar styles for links dialog */
@@ -1192,6 +1194,35 @@ section p {
   border-radius: 6px;
   border: 3px solid transparent;
   background-clip: padding-box;
+}
+
+.links-filter-wrapper {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.links-filter-btn {
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.links-filter-btn:hover {
+  border-color: #444;
+  color: var(--text-bright);
+}
+
+.links-filter-btn.active {
+  background: var(--text-bright);
+  border-color: var(--text-bright);
+  color: var(--bg);
 }
 
 .links-search-wrapper {
@@ -1222,10 +1253,12 @@ section p {
   list-style: none;
   margin: 0;
   padding: 0;
+  min-width: 0;
 }
 
 .links-list li {
   border-bottom: 1px solid var(--border);
+  overflow: hidden;
 }
 
 .links-list li:last-child {
@@ -1239,6 +1272,8 @@ section p {
   cursor: pointer;
   text-decoration: none;
   transition: background 0.1s;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .links-list .link-item:hover {
@@ -1383,11 +1418,11 @@ section p {
 }
 
 .emoji-item.sent-emoji {
-  border-color: rgba(255, 204, 0, 0.3);
+  border-color: rgba(68, 136, 255, 0.3);
 }
 
 .emoji-item.received-emoji {
-  border-color: rgba(191, 90, 242, 0.3);
+  border-color: rgba(255, 68, 68, 0.3);
 }
 
 .no-emoji {
