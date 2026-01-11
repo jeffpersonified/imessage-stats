@@ -233,7 +233,7 @@ def main():
     from analyzers import run_analyzers_parallel
 
     # Local analyzers that always run
-    analyzer_names = ["temperature", "links", "profanity", "laughter", "emoji"]
+    analyzer_names = ["temperature", "links", "profanity", "laughter", "emoji", "message_style"]
 
     # LLM theme analysis requires --analyze flag AND API key
     args.use_llm_themes = False

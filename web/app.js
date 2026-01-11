@@ -184,6 +184,14 @@ const contentEl = document.querySelector(".content");
 const linksDialog = document.getElementById("links-dialog");
 const linksList = document.getElementById("links-list");
 const viewAllLinksBtn = document.getElementById("view-all-links");
+const messageStyleCard = document.getElementById("message-style-card");
+const bubblesSent = document.getElementById("bubbles-sent");
+const bubblesReceived = document.getElementById("bubbles-received");
+const styleNarrativeText = document.getElementById("style-narrative-text");
+const styleLengthYou = document.getElementById("style-length-you");
+const styleLengthThem = document.getElementById("style-length-them");
+const styleTurnYou = document.getElementById("style-turn-you");
+const styleTurnThem = document.getElementById("style-turn-them");
 
 // Store current links data for the dialog
 let currentLinksData = null;
@@ -794,6 +802,9 @@ function updateAnalysisCardsForYear(year) {
   if (analysis.temperature) {
     renderTemperature(analysis.temperature, currentContactName, year);
   }
+  if (analysis.message_style) {
+    renderMessageStyle(analysis.message_style, currentContactName, year);
+  }
   if (analysis.links) {
     renderLinks(analysis.links, currentContactName, year);
   }
@@ -831,6 +842,13 @@ function renderAnalysis(analysis, contactName) {
     temperatureCard.style.display = "block";
   } else {
     temperatureCard.style.display = "none";
+  }
+
+  // Render message style if available
+  if (analysis.message_style) {
+    renderMessageStyle(analysis.message_style, contactName, currentContactYearFilter);
+  } else {
+    messageStyleCard.style.display = 'none';
   }
 
   // Render links if available
@@ -1085,6 +1103,147 @@ function renderTemperatureChart(tempData, firstName, year = "all") {
   });
 }
 
+// Render message style card with conversation shape visualization
+function renderMessageStyle(styleData, contactName, year = 'all') {
+  if (!styleData || !messageStyleCard) {
+    if (messageStyleCard) messageStyleCard.style.display = 'none';
+    return;
+  }
+
+  const firstName = contactName.split(' ')[0];
+
+  // Get data for selected year (fall back to "all" if year doesn't exist)
+  const yearData = styleData[year] || styleData.all || {};
+  const sentMetrics = yearData.sent || {};
+  const receivedMetrics = yearData.received || {};
+
+  // Check if we have meaningful data
+  if (!sentMetrics.total_messages && !receivedMetrics.total_messages) {
+    messageStyleCard.style.display = 'none';
+    return;
+  }
+
+  messageStyleCard.style.display = 'block';
+
+  // Generate bubbles based on message style
+  const sentBubbles = generateBubbles(sentMetrics, 'sent');
+  const receivedBubbles = generateBubbles(receivedMetrics, 'received');
+
+  bubblesSent.innerHTML = sentBubbles;
+  bubblesReceived.innerHTML = receivedBubbles;
+
+  // Generate narrative text
+  const narrative = generateStyleNarrative(sentMetrics, receivedMetrics, firstName);
+  styleNarrativeText.innerHTML = narrative;
+
+  // Populate technical stats
+  const youLength = sentMetrics.avg_length || 0;
+  const themLength = receivedMetrics.avg_length || 0;
+  const youTurn = sentMetrics.avg_per_turn || 1;
+  const themTurn = receivedMetrics.avg_per_turn || 1;
+
+  styleLengthYou.textContent = `${Math.round(youLength)} words`;
+  styleLengthThem.textContent = `${Math.round(themLength)} words`;
+  styleTurnYou.textContent = youTurn.toFixed(1);
+  styleTurnThem.textContent = themTurn.toFixed(1);
+}
+
+// Generate bubble HTML based on message style metrics
+function generateBubbles(metrics, direction) {
+  const avgLength = metrics.avg_length || 0;
+  const avgPerTurn = metrics.avg_per_turn || 1;
+
+  // Determine number of bubbles (1-4 based on messages per turn)
+  // Round to nearest integer for accurate reflection of conversation shape
+  const bubbleCount = Math.max(1, Math.min(4, Math.round(avgPerTurn)));
+
+  // Calculate base width based on avg word count (60-200px range)
+  const minWidth = 60;
+  const maxWidth = 200;
+  const baseWidth = Math.min(maxWidth, Math.max(minWidth, 40 + avgLength * 10));
+
+  // Height constants
+  const singleLineHeight = 26;
+  const doubleLineHeight = 50;
+  const writesLong = avgLength >= 10;
+
+  // Predefined width multipliers for natural-looking variance
+  const widthPatterns = {
+    1: [[1.0]],
+    2: [[1.0, 0.65], [0.85, 1.0], [1.0, 0.75]],
+    3: [[1.0, 0.7, 0.85], [0.9, 1.0, 0.6], [0.75, 0.95, 0.55], [1.0, 0.55, 0.8]],
+    4: [[1.0, 0.6, 0.85, 0.5], [0.9, 0.55, 1.0, 0.7], [0.8, 1.0, 0.5, 0.65]]
+  };
+
+  // Pick random width pattern
+  const widthPatternOptions = widthPatterns[bubbleCount];
+  const widthPattern = widthPatternOptions[Math.floor(Math.random() * widthPatternOptions.length)];
+
+  // Generate bubbles with appropriate heights
+  // For long-message writers with multiple bubbles: first bubble tall, rest single-line
+  // This reflects the pattern of one main message + quick follow-ups
+  const bubbles = [];
+  for (let i = 0; i < bubbleCount; i++) {
+    const width = Math.round(Math.max(minWidth, Math.min(maxWidth, baseWidth * widthPattern[i])));
+    // First bubble gets tall height if they write long, others are single-line follow-ups
+    const height = (writesLong && (bubbleCount === 1 || i === 0)) ? doubleLineHeight : singleLineHeight;
+    const borderRadius = Math.min(height / 2, 16);
+    bubbles.push(`<div class="message-bubble ${direction}" style="width: ${width}px; height: ${height}px; border-radius: ${borderRadius}px"></div>`);
+  }
+
+  return bubbles.join('');
+}
+
+// Generate narrative text comparing message styles
+function generateStyleNarrative(sentMetrics, receivedMetrics, firstName) {
+  const youLength = sentMetrics.avg_length || 0;
+  const themLength = receivedMetrics.avg_length || 0;
+  const youPerTurn = sentMetrics.avg_per_turn || 1;
+  const themPerTurn = receivedMetrics.avg_per_turn || 1;
+
+  const parts = [];
+
+  // Compare message lengths
+  const lengthDiff = youLength - themLength;
+  const absDiff = Math.abs(lengthDiff);
+  const pctDiff = absDiff / Math.max(youLength, themLength);
+
+  // Describe length difference in human terms (threshold: 15% AND 2+ words)
+  if (pctDiff > 0.15 && absDiff > 2) {
+    const ratio = Math.max(youLength, themLength) / Math.min(youLength, themLength);
+    if (lengthDiff > 0) {
+      if (ratio > 1.5) {
+        parts.push(`<span class="you">You</span> tend to write much longer messages`);
+      } else {
+        parts.push(`<span class="you">You</span> tend to write longer messages`);
+      }
+    } else {
+      if (ratio > 1.5) {
+        parts.push(`<span class="them">${firstName}</span> tends to write much longer messages`);
+      } else {
+        parts.push(`<span class="them">${firstName}</span> tends to write longer messages`);
+      }
+    }
+  } else {
+    parts.push(`You both send similar length messages`);
+  }
+
+  // Describe burst behavior in human terms
+  const turnDiff = Math.abs(youPerTurn - themPerTurn);
+
+  if (turnDiff > 0.4 && (youPerTurn > 1.8 || themPerTurn > 1.8)) {
+    if (youPerTurn > themPerTurn) {
+      parts.push(`<span class="you">you</span> tend to rapid-fire multiple messages in a row`);
+    } else {
+      parts.push(`<span class="them">${firstName}</span> tends to send multiple messages in a row`);
+    }
+  } else if (youPerTurn > 2.2 && themPerTurn > 2.2) {
+    parts.push(`you both tend to send messages in quick bursts`);
+  }
+
+  return parts.join('; ') + (parts.length > 0 ? '.' : '');
+}
+
 // Render links shared card
 function renderLinks(linksData, contactName, year = "all") {
   const sentCountEl = document.getElementById("links-sent");
@@ -1208,11 +1367,6 @@ function renderEmoji(emojiData, contactName, year = "all") {
   const receivedEl = document.getElementById("emoji-received");
   const sentCountEl = document.getElementById("emoji-sent-count");
   const receivedCountEl = document.getElementById("emoji-received-count");
-  const themLabelEl = document.getElementById("emoji-them-label");
-  const firstName = contactName.split(" ")[0];
-
-  // Update label with contact name
-  themLabelEl.textContent = firstName;
 
   // Get data for selected year (fall back to "all" if year doesn't exist)
   const yearData = emojiData[year] || emojiData.all || {};

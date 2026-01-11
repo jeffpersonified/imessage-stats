@@ -92,6 +92,36 @@
             </div>
           </div>
         </div>
+        <div class="analysis-card analysis-card-wide message-style-card" id="message-style-card" style="display: none;">
+          <div class="message-style-left">
+            <h3>Conversation Shape</h3>
+            <p id="style-narrative-text" class="style-narrative"></p>
+            <div class="style-stats">
+              <div class="style-stat-row">
+                <span class="style-stat-label">Avg message length</span>
+                <span class="style-stat-values">
+                  <span class="you" id="style-length-you">--</span>
+                  <span class="style-stat-divider">/</span>
+                  <span class="them" id="style-length-them">--</span>
+                </span>
+              </div>
+              <div class="style-stat-row">
+                <span class="style-stat-label">Messages per turn</span>
+                <span class="style-stat-values">
+                  <span class="you" id="style-turn-you">--</span>
+                  <span class="style-stat-divider">/</span>
+                  <span class="them" id="style-turn-them">--</span>
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="message-style-right">
+            <div class="bubble-stack-container">
+              <div id="bubbles-received" class="bubble-stack received"></div>
+              <div id="bubbles-sent" class="bubble-stack sent"></div>
+            </div>
+          </div>
+        </div>
         <div class="analysis-card" id="links-card" style="display: none;">
           <div class="card-header-row">
             <h3>Links Shared</h3>
@@ -113,11 +143,9 @@
           </div>
           <div class="emoji-grid-section">
             <div class="emoji-row">
-              <span class="emoji-row-label sent">You</span>
               <div class="emoji-list" id="emoji-sent"></div>
             </div>
             <div class="emoji-row">
-              <span class="emoji-row-label received" id="emoji-them-label">Them</span>
               <div class="emoji-list" id="emoji-received"></div>
             </div>
           </div>

@@ -16,11 +16,12 @@
   --text: #555;
   --text-bright: #888;
   --accent: #ccc;
-  --sent: #4488FF;
-  --received: #FF4444;
+  --sent: #4488ff;
+  --received: #ff4444;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   overflow: hidden;
 }
@@ -251,11 +252,13 @@ section p {
   color: var(--accent);
 }
 
-.sent, .you {
+.sent,
+.you {
   color: var(--sent);
 }
 
-.received, .them {
+.received,
+.them {
   color: var(--received);
 }
 
@@ -814,8 +817,13 @@ section p {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 0.6; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .theme-summary {
@@ -1007,8 +1015,8 @@ section p {
 /* Primary button component */
 .btn-primary {
   flex-shrink: 0;
-  background: var(--received);
-  border: 1px solid var(--received);
+  background: var(--sent);
+  border: 1px solid var(--sent);
   color: white;
   padding: 6px 12px;
   cursor: pointer;
@@ -1019,8 +1027,8 @@ section p {
 }
 
 .btn-primary:hover {
-  background: #3377ee;
-  border-color: #3377ee;
+  background: #3366cc;
+  border-color: #3366cc;
 }
 
 /* Screenshot dialog */
@@ -1425,4 +1433,123 @@ section p {
 .no-emoji {
   font-size: 12px;
   color: var(--text);
+}
+
+/* Message Style Card - Conversation Shape */
+.message-style-card {
+  display: flex !important;
+  gap: 32px;
+  align-items: stretch;
+}
+
+.message-style-card h3 {
+  margin-bottom: 8px;
+}
+
+.message-style-left {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  justify-content: start;
+}
+
+.message-style-right {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+  flex: 1;
+  max-width: 240px;
+  flex-shrink: 0;
+  padding: 8px 0;
+}
+
+.style-narrative {
+  color: var(--text-bright);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.style-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.style-stat-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.style-stat-label {
+  color: var(--text);
+}
+
+.style-stat-values {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+}
+
+.style-stat-divider {
+  color: var(--text);
+}
+
+.style-stat-values .you {
+  color: var(--sent);
+}
+
+.style-stat-values .them {
+  color: var(--received);
+}
+
+/* Bubble visualization - stacked vertically */
+.bubble-stack-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  padding: 4px 8px;
+}
+
+.bubble-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.bubble-stack.received {
+  align-items: flex-start;
+}
+
+.bubble-stack.sent {
+  align-items: flex-end;
+}
+
+/* Message bubbles - iMessage style */
+.message-bubble {
+  height: 26px;
+  border-radius: 13px;
+  min-width: 50px;
+}
+
+.message-bubble.sent {
+  background: var(--sent);
+}
+
+.message-bubble.received {
+  background: #404040;
+}
+
+@media (max-width: 600px) {
+  .message-style-layout {
+    flex-direction: column;
+  }
+
+  .message-style-right {
+    align-self: center;
+  }
 }
