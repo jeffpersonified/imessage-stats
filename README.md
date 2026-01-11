@@ -1,8 +1,8 @@
 # iMessage Stats
 
-Analyze your iMessage history to see who you text the most. Visualize messaging patterns over time with a local web app.
+Analyze your iMessage history to see who you text the most. Visualize messaging patterns over time.
 
-<img width="1200" height="630" alt="open graph" src="https://github.com/user-attachments/assets/953a8f4d-3a40-436c-8fc3-e755394132a5" />
+![iMessage Stats](cover.png)
 
 ## Features
 
@@ -15,18 +15,33 @@ Analyze your iMessage history to see who you text the most. Visualize messaging 
 ## Requirements
 
 - macOS (uses iMessage and Contacts databases)
-- Python 3.8+
 
-## Quick Start
+## Installation
 
-### 1. Clone the repo
+Choose one of two installation methods:
+
+### Option 1: Mac App (Recommended)
+
+The easiest way to use iMessage Stats is with the native Mac app.
+
+1. **Download** the latest release from [Releases](https://github.com/jeffpersonified/imessage-stats/releases)
+2. **Open** the DMG and drag iMessage Stats to Applications
+3. **Launch** the app and grant Full Disk Access when prompted
+
+The app will automatically read your iMessage and Contacts databases - no manual file copying required.
+
+### Option 2: Command Line (Python Scripts)
+
+If you prefer running from the terminal or want to customize the scripts:
+
+#### 1. Clone the repo
 
 ```bash
-git clone https://github.com/brianlovin/imessage-stats.git
+git clone https://github.com/jeffpersonified/imessage-stats.git
 cd imessage-stats
 ```
 
-### 2. Copy your iMessage + Contacts data
+#### 2. Copy your iMessage + Contacts data
 
 Open **Finder**, press `Cmd+Shift+G`, and copy these to the project folder:
 
@@ -46,7 +61,7 @@ imessage-stats/
 └── ...
 ```
 
-### 3. Run it
+#### 3. Run it
 
 ```bash
 ./scripts/start
@@ -54,7 +69,7 @@ imessage-stats/
 
 This exports your data, starts a local server, and opens your browser.
 
-## Options
+## Command Line Options
 
 ```bash
 ./scripts/start --limit 50      # Only export top 50 contacts
@@ -121,8 +136,8 @@ The script will add the required columns and sync your contacts. Run it again an
 **Your data stays on your computer.** This tool:
 
 - Reads your local iMessage and Contacts databases
-- Generates JSON files in `web/data/`
-- Runs a local web server for visualization
+- Generates JSON files for visualization
+- Runs entirely locally
 - Never sends data anywhere
 
 The `chat.db`, `Sources/`, and `web/data/` directories are all gitignored to prevent accidentally committing personal information.
@@ -161,3 +176,7 @@ The Contacts sources folder might be empty or in a different location. Try:
 # Find your Contacts databases
 find ~/Library -name "AddressBook-v22.abcddb" 2>/dev/null
 ```
+
+## Credits
+
+Fork of [brianlovin/imessage-stats](https://github.com/brianlovin/imessage-stats) with native Mac app support.
