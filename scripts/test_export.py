@@ -313,7 +313,8 @@ class TestGetResponseStats:
         result = get_response_stats(cursor, [1])
 
         # Should have a you_start_pct since first message was sent
-        assert result["you_start_pct"] is not None
+        # Result now has 'all' key with stats and per-year keys
+        assert result["all"]["you_start_pct"] is not None
 
     def test_empty_handles(self, mock_imessage_db):
         """Empty handle list returns None values."""
@@ -322,9 +323,10 @@ class TestGetResponseStats:
 
         result = get_response_stats(cursor, [])
 
-        assert result["you_avg_seconds"] is None
-        assert result["them_avg_seconds"] is None
-        assert result["you_start_pct"] is None
+        # Result now has 'all' key with stats
+        assert result["all"]["you_avg_seconds"] is None
+        assert result["all"]["them_avg_seconds"] is None
+        assert result["all"]["you_start_pct"] is None
 
 
 class TestGetAttachments:

@@ -33,17 +33,14 @@ def _fetch_wordlist():
     cache_path = _get_cache_path()
 
     try:
-        print(f"Fetching profane words list from GitHub...")
         with urllib.request.urlopen(_WORDLIST_URL, timeout=10) as response:
             data = response.read()
             # Validate it's valid JSON
             words = json.loads(data)
             # Save to cache
             cache_path.write_bytes(data)
-            print(f"Cached word list to {cache_path}")
             return words
-    except (urllib.error.URLError, json.JSONDecodeError, OSError) as e:
-        print(f"Warning: Could not fetch profane words list: {e}")
+    except (urllib.error.URLError, json.JSONDecodeError, OSError):
         return None
 
 

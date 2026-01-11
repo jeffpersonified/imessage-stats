@@ -202,30 +202,14 @@ def get_heatmap_by_year(cursor, handle_ids):
     return dict(yearly)
 
 
-def get_response_stats(cursor, handle_ids):
-    """Calculate average response times and conversation starter percentage."""
-    if not handle_ids:
-        return {"you_avg_seconds": None, "them_avg_seconds": None, "you_start_pct": None}
+def _compute_response_stats(messages):
+    """Compute response stats from a list of (timestamp, is_from_me) tuples.
 
-    placeholders = ",".join("?" * len(handle_ids))
-
-    # Get all messages ordered by date
-    cursor.execute(f"""
-        SELECT m.date, m.is_from_me
-        FROM message m
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
-        WHERE chj.handle_id IN ({placeholders}) AND c.style = 45
-        ORDER BY m.date
-    """, handle_ids)
-
-    messages = [(ts, is_from_me) for ts, is_from_me in cursor.fetchall() if ts]
-
+    Returns dict with you_avg_seconds, them_avg_seconds, you_start_pct.
+    """
     if len(messages) < 2:
         return {"you_avg_seconds": None, "them_avg_seconds": None, "you_start_pct": None}
 
-    # Calculate response times and conversation starters
     CONVERSATION_GAP = 4 * 60 * 60 * 1e9  # 4 hours in nanoseconds
     RESPONSE_MAX = 60 * 60 * 1e9  # Only count responses within 1 hour as actual responses
 
@@ -272,6 +256,49 @@ def get_response_stats(cursor, handle_ids):
         "them_avg_seconds": round(them_avg) if them_avg else None,
         "you_start_pct": round(you_start_pct, 2) if you_start_pct is not None else None
     }
+
+
+def get_response_stats(cursor, handle_ids):
+    """Calculate average response times and conversation starter percentage.
+
+    Returns a dict with 'all' for all-time stats and per-year keys (e.g., '2024').
+    """
+    if not handle_ids:
+        return {"all": {"you_avg_seconds": None, "them_avg_seconds": None, "you_start_pct": None}}
+
+    placeholders = ",".join("?" * len(handle_ids))
+
+    # Get all messages ordered by date, with year
+    cursor.execute(f"""
+        SELECT
+            m.date,
+            m.is_from_me,
+            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
+        WHERE chj.handle_id IN ({placeholders}) AND c.style = 45
+        ORDER BY m.date
+    """, handle_ids)
+
+    all_messages = []
+    messages_by_year = defaultdict(list)
+
+    for ts, is_from_me, year in cursor.fetchall():
+        if ts:
+            all_messages.append((ts, is_from_me))
+            if year:
+                messages_by_year[year].append((ts, is_from_me))
+
+    # Compute all-time stats
+    result = {"all": _compute_response_stats(all_messages)}
+
+    # Compute per-year stats
+    for year, year_messages in messages_by_year.items():
+        result[year] = _compute_response_stats(year_messages)
+
+    return result
 
 
 # -----------------------------------------------------------------------------

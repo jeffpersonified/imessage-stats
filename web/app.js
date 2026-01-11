@@ -71,6 +71,7 @@ const statReceived = document.getElementById('stat-received');
 const toggleButtons = document.querySelectorAll('.toggle button');
 const convoStarterEl = document.getElementById('convo-starter');
 const responseTimeEl = document.getElementById('response-time');
+const swearComparisonEl = document.getElementById('swear-comparison');
 const statTotalDetail = document.getElementById('stat-total-detail');
 const statSentDetail = document.getElementById('stat-sent-detail');
 const statReceivedDetail = document.getElementById('stat-received-detail');
@@ -91,12 +92,6 @@ const busiestMonthEl = document.getElementById('busiest-month');
 const patternsSection = document.querySelector('.patterns');
 const chartToggle = document.querySelector('.chart-section .toggle');
 const analysisSection = document.getElementById('analysis-section');
-const profanityCard = document.getElementById('profanity-card');
-const profanityHeader = document.getElementById('profanity-header');
-const profanityTopSent = document.getElementById('profanity-top-sent');
-const profanityTopReceived = document.getElementById('profanity-top-received');
-const profanityToggle = document.getElementById('profanity-toggle');
-let profanityRevealed = false;
 const analysisYearFilter = document.getElementById('analysis-year-filter');
 const analysisYearFilterGrid = document.getElementById('analysis-year-filter-grid');
 const contentEl = document.querySelector('.content');
@@ -268,7 +263,6 @@ async function loadContact(filename, name, total, sent, received, firstDate) {
 
     // Render all content with current filter
     renderContactYear(currentContactYearFilter);
-    renderPatterns(currentContactData);
     renderAnalysis(currentContactData.analysis, name);
   } catch (err) {
     console.error('Failed to load contact data:', err);
@@ -287,21 +281,39 @@ function formatTime(seconds) {
   return `${hours} hour${hours === 1 ? '' : 's'}`;
 }
 
-// Render conversation patterns
-function renderPatterns(data) {
-  const stats = data.response_stats || {};
+// Render conversation patterns (response times, conversation starters, profanity comparison)
+function renderPatterns(data, year = 'all') {
   const name = currentFirstName;
+
+  // Get year-specific response stats (new format has 'all' and year keys)
+  // Also handle old format where stats are directly in response_stats (no 'all' key)
+  const responseStatsAll = data.response_stats || {};
+  let stats;
+  if (responseStatsAll.all || responseStatsAll[year]) {
+    // New format with per-year stats
+    stats = responseStatsAll[year] || responseStatsAll.all || {};
+  } else {
+    // Old format - stats are directly in response_stats
+    stats = responseStatsAll;
+  }
+
+  // Use past tense for years before the current year
+  const currentYear = new Date().getFullYear().toString();
+  const usePastTense = year !== 'all' && year < currentYear;
 
   // Conversation starter
   if (stats.you_start_pct !== null && stats.you_start_pct !== undefined) {
     const youPct = Math.round(stats.you_start_pct * 100);
     const themPct = 100 - youPct;
     if (youPct > themPct) {
-      convoStarterEl.innerHTML = `<span class="you">You</span> start the conversation ${youPct}% of the time`;
+      const verb = usePastTense ? 'started' : 'start';
+      convoStarterEl.innerHTML = `<span class="you">You</span> ${verb} the conversation ${youPct}% of the time`;
     } else if (themPct > youPct) {
-      convoStarterEl.innerHTML = `<span class="them">${name}</span> starts the conversation ${themPct}% of the time`;
+      const verb = usePastTense ? 'started' : 'starts';
+      convoStarterEl.innerHTML = `<span class="them">${name}</span> ${verb} the conversation ${themPct}% of the time`;
     } else {
-      convoStarterEl.textContent = 'You both start conversations equally';
+      const verb = usePastTense ? 'started' : 'start';
+      convoStarterEl.textContent = `You both ${verb} conversations equally`;
     }
   } else {
     convoStarterEl.textContent = '';
@@ -312,13 +324,42 @@ function renderPatterns(data) {
   const themTime = formatTime(stats.them_avg_seconds);
 
   if (youTime && themTime) {
-    responseTimeEl.innerHTML = `<span class="them">${name}</span> responds in about ${themTime}, <span class="you">you</span> respond in about ${youTime}`;
+    const verb = usePastTense ? 'responded' : 'responds';
+    const youVerb = usePastTense ? 'responded' : 'respond';
+    responseTimeEl.innerHTML = `<span class="them">${name}</span> ${verb} in about ${themTime}, <span class="you">you</span> ${youVerb} in about ${youTime}`;
   } else if (youTime) {
-    responseTimeEl.innerHTML = `<span class="you">You</span> respond in about ${youTime}`;
+    const verb = usePastTense ? 'responded' : 'respond';
+    responseTimeEl.innerHTML = `<span class="you">You</span> ${verb} in about ${youTime}`;
   } else if (themTime) {
-    responseTimeEl.innerHTML = `<span class="them">${name}</span> responds in about ${themTime}`;
+    const verb = usePastTense ? 'responded' : 'responds';
+    responseTimeEl.innerHTML = `<span class="them">${name}</span> ${verb} in about ${themTime}`;
   } else {
     responseTimeEl.textContent = '';
+  }
+
+  // Profanity comparison (who swears more)
+  const profanityData = data.analysis?.profanity;
+  if (profanityData) {
+    const yearData = profanityData[year] || profanityData.all || {};
+    const youCount = yearData.sent || 0;
+    const themCount = yearData.received || 0;
+
+    if (youCount > 0 || themCount > 0) {
+      if (youCount > themCount) {
+        const verb = usePastTense ? 'swore' : 'swear';
+        swearComparisonEl.innerHTML = `<span class="you">You</span> ${verb} more`;
+      } else if (themCount > youCount) {
+        const verb = usePastTense ? 'swore' : 'swears';
+        swearComparisonEl.innerHTML = `<span class="them">${name}</span> ${verb} more`;
+      } else {
+        const verb = usePastTense ? 'swore' : 'swear';
+        swearComparisonEl.textContent = `You both ${verb} equally`;
+      }
+    } else {
+      swearComparisonEl.textContent = '';
+    }
+  } else {
+    swearComparisonEl.textContent = '';
   }
 }
 
@@ -392,6 +433,9 @@ function renderContactYear(year) {
     ? currentContactData.time_heatmap
     : (currentContactData.heatmap_by_year?.[year] || currentContactData.time_heatmap);
   renderHeatmap(heatmapData, year);
+
+  // Render patterns (response time, convo starter, swear comparison) with year filter
+  renderPatterns(currentContactData, year);
 }
 
 // Get available years from analysis data (intersection of years across all analyzers)
@@ -452,16 +496,12 @@ function updateAnalysisCardsForYear(year) {
   if (analysis.links) {
     renderLinks(analysis.links, currentContactName, year);
   }
-  if (analysis.profanity) {
-    renderProfanity(analysis.profanity, currentContactName, year);
-  }
 }
 
-// Render analysis section (temperature, links, keywords, profanity, themes)
+// Render analysis section (temperature, links, keywords, themes)
 function renderAnalysis(analysis, contactName) {
   const temperatureCard = document.getElementById('temperature-card');
   const linksCard = document.getElementById('links-card');
-  const profanityCard = document.getElementById('profanity-card');
 
   // Hide section if no analysis data
   if (!analysis || Object.keys(analysis).length === 0) {
@@ -491,14 +531,6 @@ function renderAnalysis(analysis, contactName) {
     linksCard.style.display = 'block';
   } else {
     linksCard.style.display = 'none';
-  }
-
-  // Render profanity if available (only show if count > 0)
-  if (analysis.profanity && (analysis.profanity.all?.sent > 0 || analysis.profanity.all?.received > 0)) {
-    renderProfanity(analysis.profanity, contactName, currentContactYearFilter);
-    profanityCard.style.display = 'block';
-  } else {
-    profanityCard.style.display = 'none';
   }
 
   // Render keywords if available
@@ -788,54 +820,6 @@ function renderLinks(linksData, contactName, year = 'all') {
   } else {
     topDomainsEl.innerHTML = '<span class="no-domains">No links shared</span>';
   }
-}
-
-// Render profanity card
-function renderProfanity(profanityData, contactName, year = 'all') {
-  const firstName = contactName.split(' ')[0];
-  const statEl = document.getElementById('profanity-stat');
-
-  // Get data for selected year (fall back to "all" if year doesn't exist)
-  const yearData = profanityData[year] || profanityData.all || {};
-  const youCount = yearData.sent || 0;
-  const themCount = yearData.received || 0;
-  const topSent = yearData.top_sent || [];
-  const topReceived = yearData.top_received || [];
-
-  // Generate stat text (matching links format: "X sent / Y received")
-  if (youCount > 0 && themCount > 0) {
-    statEl.innerHTML = `<span class="sent">${formatNumber(youCount)} sent</span><span class="links-divider">/</span><span class="received">${formatNumber(themCount)} received</span>`;
-  } else if (youCount > 0) {
-    statEl.innerHTML = `<span class="sent">${formatNumber(youCount)} sent</span>`;
-  } else if (themCount > 0) {
-    statEl.innerHTML = `<span class="received">${formatNumber(themCount)} received</span>`;
-  } else {
-    statEl.innerHTML = 'None this year';
-  }
-
-  // Render top words lists with obscured text by default
-  const obscureWord = (word) => '•'.repeat(word.length);
-  const renderWord = (word) => profanityRevealed ? word : obscureWord(word);
-  const obscuredClass = profanityRevealed ? '' : ' obscured';
-
-  if (topSent.length > 0) {
-    profanityTopSent.innerHTML = topSent.map(item =>
-      `<li><span class="word${obscuredClass}" data-word="${item.word}">${renderWord(item.word)}</span><span class="count">${formatNumber(item.count)}</span></li>`
-    ).join('');
-  } else {
-    profanityTopSent.innerHTML = '<li class="no-words">None</li>';
-  }
-
-  if (topReceived.length > 0) {
-    profanityTopReceived.innerHTML = topReceived.map(item =>
-      `<li><span class="word${obscuredClass}" data-word="${item.word}">${renderWord(item.word)}</span><span class="count">${formatNumber(item.count)}</span></li>`
-    ).join('');
-  } else {
-    profanityTopReceived.innerHTML = '<li class="no-words">None</li>';
-  }
-
-  // Update toggle button text
-  profanityToggle.textContent = profanityRevealed ? 'Hide' : 'Show';
 }
 
 // Render keywords/topics card
@@ -1509,28 +1493,6 @@ topContactsGrid.addEventListener('click', (e) => {
       loadContact(contact.filename, contact.name, contact.total, contact.sent, contact.received, contact.first_date);
     }
   }
-});
-
-// Profanity words show/hide toggle
-profanityToggle.addEventListener('click', (e) => {
-  e.stopPropagation();
-  profanityRevealed = !profanityRevealed;
-
-  // Update all word elements in place
-  const wordEls = profanityCard.querySelectorAll('.word[data-word]');
-  wordEls.forEach(el => {
-    const actualWord = el.dataset.word;
-    if (profanityRevealed) {
-      el.textContent = actualWord;
-      el.classList.remove('obscured');
-    } else {
-      el.textContent = '•'.repeat(actualWord.length);
-      el.classList.add('obscured');
-    }
-  });
-
-  // Update toggle button text
-  profanityToggle.textContent = profanityRevealed ? 'Hide' : 'Show';
 });
 
 // Analysis year filter button click - sync with main contact year filter
