@@ -24,6 +24,7 @@ from export import (
     load_contacts,
     slugify,
     safe_filename,
+    main,
     APPLE_EPOCH,
 )
 
@@ -473,6 +474,81 @@ class TestNameCollisionPrevention:
 
         assert name1 == name2 == "John Smith"
         assert id1 != id2  # Critical: different contact IDs
+
+
+class TestMainValidation:
+    """Tests for main() entry point validation and error handling."""
+
+    def test_missing_database_returns_error(self, tmp_path, monkeypatch):
+        """main() returns 1 when database file doesn't exist."""
+        # Point to non-existent database
+        monkeypatch.setattr(
+            "sys.argv",
+            ["export.py", "--db", str(tmp_path / "nonexistent.db"), "--output", str(tmp_path)]
+        )
+        result = main()
+        assert result == 1
+
+    def test_valid_database_succeeds(self, mock_imessage_db, tmp_path, monkeypatch):
+        """main() succeeds with a valid database."""
+        db_path, conn = mock_imessage_db
+        conn.close()  # Close the fixture's connection so we don't have lock issues
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["export.py", "--db", db_path, "--output", str(tmp_path), "--limit", "10"]
+        )
+        result = main()
+        assert result is None  # main() returns None on success
+
+    def test_missing_contacts_continues_with_warning(self, mock_imessage_db, tmp_path, monkeypatch, capsys):
+        """main() continues when contacts directory is missing."""
+        db_path, conn = mock_imessage_db
+        conn.close()
+
+        monkeypatch.setattr(
+            "sys.argv",
+            [
+                "export.py",
+                "--db", db_path,
+                "--contacts", str(tmp_path / "nonexistent_contacts"),
+                "--output", str(tmp_path),
+                "--limit", "10"
+            ]
+        )
+        result = main()
+        assert result is None  # Should succeed despite missing contacts
+
+        captured = capsys.readouterr()
+        assert "Sources/ directory not found" in captured.out
+
+    def test_corrupted_database_returns_error(self, tmp_path, monkeypatch):
+        """main() returns 1 when database is corrupted."""
+        # Create a file that isn't a valid SQLite database
+        corrupted_db = tmp_path / "corrupted.db"
+        corrupted_db.write_text("this is not a database")
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["export.py", "--db", str(corrupted_db), "--output", str(tmp_path)]
+        )
+        result = main()
+        assert result == 1
+
+    def test_database_missing_message_table_returns_error(self, tmp_path, monkeypatch):
+        """main() returns 1 when database doesn't have message table."""
+        # Create a valid SQLite database but without the message table
+        empty_db = tmp_path / "empty.db"
+        conn = sqlite3.connect(str(empty_db))
+        conn.execute("CREATE TABLE other_table (id INTEGER)")
+        conn.close()
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["export.py", "--db", str(empty_db), "--output", str(tmp_path)]
+        )
+        result = main()
+        assert result == 1
 
 
 if __name__ == "__main__":

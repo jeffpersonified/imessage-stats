@@ -359,15 +359,46 @@ def main():
     # Verify database exists
     if not os.path.exists(args.db):
         print(f"Error: Database not found at {args.db}")
-        print("\nCopy your iMessage database to the project folder:")
-        print("  1. Open Finder → Go → Go to Folder → ~/Library/Messages")
-        print("  2. Copy chat.db to this project folder")
-        print("\nOr specify a custom path with --db")
+        print("")
+        print("Copy your iMessage database to this directory:")
+        print("  1. Open Finder and press Cmd+Shift+G")
+        print("  2. Enter: ~/Library/Messages")
+        print("  3. Copy chat.db to this project folder")
+        print("")
+        print("Or specify a custom path with --db")
+        return 1
+
+    # Verify database is readable
+    try:
+        test_uri = f"file:{args.db}?mode=ro"
+        test_conn = sqlite3.connect(test_uri, uri=True, timeout=5)
+        test_conn.execute("SELECT 1 FROM message LIMIT 1")
+        test_conn.close()
+    except sqlite3.OperationalError as e:
+        error_msg = str(e).lower()
+        if "locked" in error_msg:
+            print(f"Error: Database is locked at {args.db}")
+            print("\nThe database may be in use by another process.")
+            print("Wait a moment and try again, or restart your Mac if the issue persists.")
+        else:
+            print(f"Error: Cannot read database at {args.db}")
+            print(f"SQLite error: {e}")
+            print("\nThe file may still be copying. Wait and try again.")
+        return 1
+    except Exception as e:
+        print(f"Error: Cannot read database at {args.db}")
+        print(f"Unexpected error: {e}")
         return 1
 
     print("Loading contacts...")
-    phone_to_contact, email_to_contact = load_contacts(args.contacts)
-    print(f"  Found {len(phone_to_contact)} phone and {len(email_to_contact)} email mappings")
+    if os.path.isdir(args.contacts):
+        phone_to_contact, email_to_contact = load_contacts(args.contacts)
+        print(f"  Found {len(phone_to_contact)} phone and {len(email_to_contact)} email mappings")
+    else:
+        print("  Sources/ directory not found - names won't be matched")
+        print("  To fix: Finder > Cmd+Shift+G > ~/Library/Application Support/AddressBook")
+        print("         Copy the Sources folder to this project directory")
+        phone_to_contact, email_to_contact = {}, {}
 
     print("Querying iMessage database...")
     uri = f"file:{args.db}?mode=ro"

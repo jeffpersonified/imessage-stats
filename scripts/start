@@ -14,6 +14,56 @@ for arg in "$@"; do
   fi
 done
 
+# Check for required data files
+missing_files=false
+
+if [ ! -f "chat.db" ]; then
+  missing_files=true
+fi
+
+if [ ! -d "Sources" ]; then
+  missing_sources=true
+fi
+
+# If chat.db is missing, show setup instructions
+if [ "$missing_files" = true ]; then
+  echo "Setup required! Copy your iMessage data to this directory:"
+  echo ""
+  echo "  1. Open Finder and press Cmd+Shift+G"
+  echo "  2. Enter: ~/Library/Messages"
+  echo "  3. Copy chat.db to this project folder"
+  if [ "$missing_sources" = true ]; then
+    echo ""
+    echo "  For contact names, also copy:"
+    echo "  1. Cmd+Shift+G > ~/Library/Application Support/AddressBook"
+    echo "  2. Copy the Sources folder to this project folder"
+  fi
+  echo ""
+  echo "After copying, run this script again."
+  exit 1
+fi
+
+# Warn if Sources is missing (contacts won't be matched, but script can still run)
+if [ "$missing_sources" = true ]; then
+  echo "Warning: Sources/ directory not found. Contact names won't be matched."
+  echo "To fix: Finder > Cmd+Shift+G > ~/Library/Application Support/AddressBook"
+  echo "        Copy the Sources folder to this project directory"
+  echo ""
+fi
+
+# Verify chat.db is readable and valid
+if ! sqlite3 chat.db "SELECT 1 FROM message LIMIT 1" >/dev/null 2>&1; then
+  echo "Error: Cannot read chat.db"
+  echo ""
+  echo "This usually means:"
+  echo "  1. The file is still being copied (wait and retry)"
+  echo "  2. The file is corrupted (re-copy from Finder)"
+  echo ""
+  echo "Try copying again via Finder:"
+  echo "  Cmd+Shift+G > ~/Library/Messages > copy chat.db"
+  exit 1
+fi
+
 # Clear old data to ensure fresh export
 rm -rf web/data && mkdir -p web/data && touch web/data/.gitkeep
 

@@ -36,9 +36,9 @@ A local-only tool that analyzes your iMessage history and visualizes messaging p
 
 ### Data Flow
 1. User copies `chat.db` and `Sources/` to project root
-2. `export.py` queries databases, matches contacts, generates JSON
+2. `export.py` queries the local copies, matches contacts, generates JSON
 3. Web app loads `contacts.json` and per-contact `messages/*.json` files
-4. All data stays local
+4. All data stays local - scripts never access ~/Library directly
 
 ### Privacy
 - User data files are gitignored: `chat.db`, `Sources/`, `web/data/`
