@@ -2,7 +2,7 @@
 
 Analyze your iMessage history to see who you text the most. Visualize messaging patterns over time with a local web app.
 
-<img width="1200" height="630" alt="open graph" src="https://github.com/user-attachments/assets/953a8f4d-3a40-436c-8fc3-e755394132a5" />
+<img width="1200" height="630" alt="open graph" src="./assets/cover.png" />
 
 ## Features
 
