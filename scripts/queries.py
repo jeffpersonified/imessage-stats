@@ -707,6 +707,46 @@ def get_yearly_top_identifiers(cursor, top_n=8):
     return set(row[0] for row in cursor.fetchall())
 
 
+def get_word_counts_by_identifier(cursor):
+    """Get word counts per identifier across all 1-on-1 conversations.
+
+    Used for weighted contact ranking that considers both message count and word count.
+
+    Returns:
+        dict mapping identifier to {words_sent, words_received}
+    """
+    cursor.execute("""
+        SELECT
+            h.id as identifier,
+            m.text,
+            m.attributedBody,
+            m.is_from_me
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
+        JOIN handle h ON chj.handle_id = h.ROWID
+        WHERE c.style = 45
+    """)
+
+    word_counts = defaultdict(lambda: {"words_sent": 0, "words_received": 0})
+
+    for identifier, text, attr_body, is_from_me in cursor.fetchall():
+        # Prefer text column, fall back to extracting from attributedBody
+        msg_text = text if text and text.strip() else None
+        if not msg_text and attr_body:
+            msg_text = extract_text_from_attributed_body(attr_body)
+
+        if msg_text:
+            word_count = len(msg_text.split())
+            if is_from_me:
+                word_counts[identifier]["words_sent"] += word_count
+            else:
+                word_counts[identifier]["words_received"] += word_count
+
+    return dict(word_counts)
+
+
 def get_global_response_stats(cursor):
     """Calculate global average response times across all 1-on-1 conversations.
 

@@ -292,11 +292,6 @@ function renderContacts(filter = "") {
 
   contactList.innerHTML = filtered
     .map((c) => {
-      const isPending = isContactPending(c.filename);
-      const metaText = isPending
-        ? "Processing..."
-        : `${formatNumber(c.total)} messages`;
-      const metaClass = isPending ? "contact-meta processing" : "contact-meta";
       return `
       <li data-filename="${c.filename}" data-name="${c.name}"
           data-total="${c.total}" data-sent="${c.sent}" data-received="${
@@ -304,7 +299,6 @@ function renderContacts(filter = "") {
       }"
           data-first="${c.first_date || ""}">
         <div class="contact-name">${c.name}</div>
-        <div class="${metaClass}">${metaText}</div>
       </li>
     `;
     })

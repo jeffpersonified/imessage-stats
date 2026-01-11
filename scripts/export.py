@@ -23,7 +23,7 @@ from queries import (
     get_heatmap_by_year, get_response_stats, get_global_stats, get_global_monthly,
     get_global_heatmap, get_global_attachments, get_global_links, get_yearly_links,
     get_global_emoji, get_yearly_emoji, get_yearly_top_identifiers, get_yearly_data,
-    get_global_word_counts, get_yearly_word_counts,
+    get_global_word_counts, get_yearly_word_counts, get_word_counts_by_identifier,
     get_global_response_stats, get_global_laughter, get_global_profanity, get_global_questions,
 )
 
@@ -158,6 +158,13 @@ def main():
     elapsed = format_duration(time.time() - start_time)
     print(f"  Found {len(results)} unique conversations ({elapsed})")
 
+    # Get word counts per identifier for weighted ranking
+    print("\nCounting words per contact...")
+    word_start_time = time.time()
+    word_counts_by_id = get_word_counts_by_identifier(cursor)
+    word_elapsed = format_duration(time.time() - word_start_time)
+    print(f"  Done ({word_elapsed})")
+
     # Group by contact_id (not name!) to avoid merging different people with same name
     print("\nMatching conversations to contacts...")
     contacts_by_id = defaultdict(list)
@@ -194,19 +201,37 @@ def main():
         first_dates = [e["first_date"] for e in entries if e["first_date"]]
         last_dates = [e["last_date"] for e in entries if e["last_date"]]
 
+        # Sum word counts across all identifiers for this contact
+        total_words_sent = 0
+        total_words_received = 0
+        for e in entries:
+            wc = word_counts_by_id.get(e["identifier"], {})
+            total_words_sent += wc.get("words_sent", 0)
+            total_words_received += wc.get("words_received", 0)
+        total_words = total_words_sent + total_words_received
+
+        # Weighted score: messages + words/10
+        # This gives equal weight to messages and words when avg message length is 10 words
+        total_messages = total_sent + total_received
+        weighted_score = total_messages + total_words / 10
+
         merged.append({
             "name": name,
             "identifier": identifier,
             "handle_rowids": handle_rowids,
             "sent": total_sent,
             "received": total_received,
-            "total": total_sent + total_received,
+            "total": total_messages,
+            "words_sent": total_words_sent,
+            "words_received": total_words_received,
+            "total_words": total_words,
+            "weighted_score": weighted_score,
             "first_date": min(first_dates) if first_dates else None,
             "last_date": max(last_dates) if last_dates else None,
         })
 
-    # Sort and limit
-    merged.sort(key=lambda x: x["total"], reverse=True)
+    # Sort by weighted score (considers both message count and word count)
+    merged.sort(key=lambda x: x["weighted_score"], reverse=True)
     top_contacts = merged[:args.limit]
     top_identifiers = {c["identifier"] for c in top_contacts}
 

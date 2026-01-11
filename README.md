@@ -6,7 +6,7 @@ Analyze your iMessage history to see who you text the most. Visualize messaging 
 
 ## Features
 
-- **Top contacts** ranked by total message count
+- **Top contacts** ranked by a mix of messages exchanged and words sent
 - **Sent vs received** breakdown for each contact
 - **Timeline visualization** with monthly and yearly views
 - **Search** to quickly find specific contacts

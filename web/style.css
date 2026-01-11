@@ -102,7 +102,7 @@ body {
 }
 
 #contact-list li {
-  padding: 10px 16px;
+  padding: 16px;
   cursor: pointer;
   border-bottom: 1px solid var(--border);
   transition: background 0.1s;
@@ -122,17 +122,6 @@ body {
 
 .contact-name {
   color: var(--text-bright);
-  margin-bottom: 2px;
-}
-
-.contact-meta {
-  font-size: 11px;
-  color: #444;
-}
-
-.contact-meta.processing {
-  color: rgba(255, 204, 0, 0.7);
-  animation: pulse 1.5s ease-in-out infinite;
 }
 
 /* Content */
