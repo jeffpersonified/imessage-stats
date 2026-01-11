@@ -285,15 +285,15 @@ def main():
     parser = argparse.ArgumentParser(
         description="Export iMessage statistics for visualization"
     )
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     parser.add_argument(
         "--db",
-        default=os.path.join(script_dir, "chat.db"),
+        default=os.path.join(project_dir, "chat.db"),
         help="Path to iMessage database (default: ./chat.db)",
     )
     parser.add_argument(
         "--contacts",
-        default=os.path.join(script_dir, "Sources"),
+        default=os.path.join(project_dir, "Sources"),
         help="Path to Contacts sources directory (default: ./Sources)",
     )
     parser.add_argument(
@@ -304,7 +304,7 @@ def main():
     )
     parser.add_argument(
         "--output",
-        default=os.path.join(os.path.dirname(__file__), "web", "data"),
+        default=os.path.join(project_dir, "web", "data"),
         help="Output directory (default: web/data)",
     )
     args = parser.parse_args()

@@ -1,2 +1,0 @@
-#!/bin/bash
-cd "$(dirname "$0")/.." && uv run --with requests --with python-dotenv python3 notion/sync.py "$@"

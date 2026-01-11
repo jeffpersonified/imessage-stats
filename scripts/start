@@ -19,7 +19,7 @@ rm -rf web/data && mkdir -p web/data && touch web/data/.gitkeep
 
 # Export the data
 echo "Exporting your iMessage data..."
-python3 export.py "${EXPORT_ARGS[@]}"
+python3 scripts/export.py "${EXPORT_ARGS[@]}"
 
 # Open browser (do this before starting server so it's ready when page loads)
 echo "Opening browser..."

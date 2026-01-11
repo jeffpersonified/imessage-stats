@@ -63,7 +63,7 @@ const statSentDetail = document.getElementById('stat-sent-detail');
 const statReceivedDetail = document.getElementById('stat-received-detail');
 const heatmapCanvas = document.getElementById('heatmap');
 const heatmapTooltip = document.getElementById('heatmap-tooltip');
-const heatmapPeak = document.getElementById('heatmap-peak');
+const heatmapLabel = document.getElementById('heatmap-label');
 
 // Heatmap state for hover
 let currentHeatmapData = null;
@@ -214,11 +214,14 @@ function renderPatterns(data) {
 // Render attachment details under sent/received stats
 function renderAttachmentDetails(att) {
   if (!att) {
-    statTotalDetail.textContent = '';
-    statSentDetail.textContent = '';
-    statReceivedDetail.textContent = '';
+    statTotalDetail.innerHTML = '';
+    statSentDetail.innerHTML = '';
+    statReceivedDetail.innerHTML = '';
     return;
   }
+
+  // Use \u00A0 (non-breaking space) to keep number and unit together
+  const nbsp = '\u00A0';
 
   // Build total details
   const totalParts = [];
@@ -226,27 +229,33 @@ function renderAttachmentDetails(att) {
   const totalVideos = (att.videos_sent || 0) + (att.videos_received || 0);
   const totalAudio = (att.audio_sent || 0) + (att.audio_received || 0);
   const totalGifs = (att.gifs_sent || 0) + (att.gifs_received || 0);
-  if (totalPhotos) totalParts.push(`${formatNumber(totalPhotos)} photo${totalPhotos === 1 ? '' : 's'}`);
-  if (totalVideos) totalParts.push(`${formatNumber(totalVideos)} video${totalVideos === 1 ? '' : 's'}`);
-  if (totalAudio) totalParts.push(`${formatNumber(totalAudio)} audio`);
-  if (totalGifs) totalParts.push(`${formatNumber(totalGifs)} GIF${totalGifs === 1 ? '' : 's'}`);
-  statTotalDetail.textContent = totalParts.length ? totalParts.join(', ') : '';
+  if (totalPhotos) totalParts.push(`${formatNumber(totalPhotos)}${nbsp}photo${totalPhotos === 1 ? '' : 's'}`);
+  if (totalVideos) totalParts.push(`${formatNumber(totalVideos)}${nbsp}video${totalVideos === 1 ? '' : 's'}`);
+  if (totalAudio) totalParts.push(`${formatNumber(totalAudio)}${nbsp}audio`);
+  if (totalGifs) totalParts.push(`${formatNumber(totalGifs)}${nbsp}GIF${totalGifs === 1 ? '' : 's'}`);
+  statTotalDetail.innerHTML = totalParts.map((p, i) =>
+    `<span class="detail-line">${i === 0 ? '└── ' : '    '}${p}</span>`
+  ).join('');
 
   // Build sent details
   const sentParts = [];
-  if (att.photos_sent) sentParts.push(`${formatNumber(att.photos_sent)} photo${att.photos_sent === 1 ? '' : 's'}`);
-  if (att.videos_sent) sentParts.push(`${formatNumber(att.videos_sent)} video${att.videos_sent === 1 ? '' : 's'}`);
-  if (att.audio_sent) sentParts.push(`${formatNumber(att.audio_sent)} audio`);
-  if (att.gifs_sent) sentParts.push(`${formatNumber(att.gifs_sent)} GIF${att.gifs_sent === 1 ? '' : 's'}`);
-  statSentDetail.textContent = sentParts.length ? sentParts.join(', ') : '';
+  if (att.photos_sent) sentParts.push(`${formatNumber(att.photos_sent)}${nbsp}photo${att.photos_sent === 1 ? '' : 's'}`);
+  if (att.videos_sent) sentParts.push(`${formatNumber(att.videos_sent)}${nbsp}video${att.videos_sent === 1 ? '' : 's'}`);
+  if (att.audio_sent) sentParts.push(`${formatNumber(att.audio_sent)}${nbsp}audio`);
+  if (att.gifs_sent) sentParts.push(`${formatNumber(att.gifs_sent)}${nbsp}GIF${att.gifs_sent === 1 ? '' : 's'}`);
+  statSentDetail.innerHTML = sentParts.map((p, i) =>
+    `<span class="detail-line">${i === 0 ? '└── ' : '    '}${p}</span>`
+  ).join('');
 
   // Build received details
   const recvParts = [];
-  if (att.photos_received) recvParts.push(`${formatNumber(att.photos_received)} photo${att.photos_received === 1 ? '' : 's'}`);
-  if (att.videos_received) recvParts.push(`${formatNumber(att.videos_received)} video${att.videos_received === 1 ? '' : 's'}`);
-  if (att.audio_received) recvParts.push(`${formatNumber(att.audio_received)} audio`);
-  if (att.gifs_received) recvParts.push(`${formatNumber(att.gifs_received)} GIF${att.gifs_received === 1 ? '' : 's'}`);
-  statReceivedDetail.textContent = recvParts.length ? recvParts.join(', ') : '';
+  if (att.photos_received) recvParts.push(`${formatNumber(att.photos_received)}${nbsp}photo${att.photos_received === 1 ? '' : 's'}`);
+  if (att.videos_received) recvParts.push(`${formatNumber(att.videos_received)}${nbsp}video${att.videos_received === 1 ? '' : 's'}`);
+  if (att.audio_received) recvParts.push(`${formatNumber(att.audio_received)}${nbsp}audio`);
+  if (att.gifs_received) recvParts.push(`${formatNumber(att.gifs_received)}${nbsp}GIF${att.gifs_received === 1 ? '' : 's'}`);
+  statReceivedDetail.innerHTML = recvParts.map((p, i) =>
+    `<span class="detail-line">${i === 0 ? '└── ' : '    '}${p}</span>`
+  ).join('');
 }
 
 // Get time-of-day period for an hour
@@ -302,13 +311,13 @@ function renderHeatmap(heatmap) {
     }
   }
 
-  // Display peak time
+  // Display peak time label
   if (peakKey && peakCount > 0) {
     const [dayIdx, period] = peakKey.split('-');
     const dayName = dayNames[parseInt(dayIdx)];
-    heatmapPeak.textContent = `${dayName} ${period}`;
+    heatmapLabel.textContent = `You usually text on ${dayName} ${period}`;
   } else {
-    heatmapPeak.textContent = '';
+    heatmapLabel.textContent = '';
   }
 
   // Draw cells
@@ -350,13 +359,25 @@ heatmapCanvas.addEventListener('mousemove', (e) => {
     heatmapTooltip.textContent = `${dayName} ${timeRange}: ${count} message${count === 1 ? '' : 's'}`;
     heatmapTooltip.classList.add('visible');
 
-    // Position tooltip
-    let left = e.clientX - rect.left + 10;
-    let top = e.clientY - rect.top - 30;
+    // Measure tooltip size
+    const tooltipRect = heatmapTooltip.getBoundingClientRect();
+    const tooltipWidth = tooltipRect.width;
+    const tooltipHeight = tooltipRect.height;
 
-    // Keep tooltip in bounds
-    if (left + 150 > rect.width) left = e.clientX - rect.left - 160;
-    if (top < 0) top = e.clientY - rect.top + 20;
+    // Position tooltip relative to cursor, keeping within viewport
+    let left = e.clientX - rect.left + 10;
+    let top = e.clientY - rect.top - tooltipHeight - 5;
+
+    // Check right edge (use viewport, not just canvas)
+    const rightEdge = e.clientX + tooltipWidth + 20;
+    if (rightEdge > window.innerWidth) {
+      left = e.clientX - rect.left - tooltipWidth - 10;
+    }
+
+    // Check top edge
+    if (top < 0) {
+      top = e.clientY - rect.top + 20;
+    }
 
     heatmapTooltip.style.left = `${left}px`;
     heatmapTooltip.style.top = `${top}px`;
@@ -381,6 +402,9 @@ function renderChart() {
 
   let data, labels, tooltipFormat;
 
+  // Track which indices are year starts (for styling)
+  let yearStartIndices = new Set();
+
   if (currentView === 'year') {
     const yearly = aggregateToYearly(currentMonthlyData);
     data = yearly;
@@ -388,11 +412,12 @@ function renderChart() {
     tooltipFormat = (item) => item.year;
   } else {
     data = currentMonthlyData;
-    labels = currentMonthlyData.map(m => {
+    labels = currentMonthlyData.map((m, i) => {
       const [year, month] = m.month.split('-');
       const date = new Date(year, month - 1);
       // Show year on January or first item
-      if (month === '01' || m === currentMonthlyData[0]) {
+      if (month === '01' || i === 0) {
+        yearStartIndices.add(i);
         return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
       }
       return date.toLocaleDateString('en-US', { month: 'short' });
@@ -478,10 +503,26 @@ function renderChart() {
           grid: { display: false },
           border: { color: '#333' },
           ticks: {
-            color: '#666',
-            font: { family: 'SF Mono, Monaco, monospace', size: 10 },
+            autoSkip: false,
             maxRotation: 45,
-            minRotation: 45
+            minRotation: 45,
+            callback: function(value, index) {
+              // In year view, show all labels
+              if (currentView === 'year') return this.getLabelForValue(value);
+
+              // In month view, only show January with year
+              if (yearStartIndices.has(index)) {
+                return this.getLabelForValue(value);
+              }
+
+              return null;
+            },
+            color: '#999',
+            font: {
+              family: 'SF Mono, Monaco, monospace',
+              size: 12,
+              weight: 'bold'
+            }
           }
         },
         y: {

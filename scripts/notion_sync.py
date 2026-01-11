@@ -6,10 +6,10 @@ Prerequisites:
 1. Create a Notion integration at https://www.notion.so/my-integrations
 2. Create an empty database in Notion (the script will add the required columns)
 3. Share the database with your integration
-4. Copy notion/.env.example to notion/.env and fill in your values
+4. Copy .env.example to .env and fill in your values
 
 Usage:
-    ./scripts/notion
+    uv run --with requests --with python-dotenv python scripts/notion_sync.py
 """
 
 import json
@@ -21,11 +21,13 @@ try:
     import requests
     from dotenv import load_dotenv
 except ImportError:
-    print("Error: Missing dependencies. Run this script with: ./scripts/notion")
+    print("Error: Missing dependencies.")
+    print("Run: uv run --with requests --with python-dotenv python scripts/notion_sync.py")
     sys.exit(1)
 
-# Load .env file from notion/ directory
-load_dotenv(Path(__file__).parent / ".env")
+# Load .env file from project root
+project_root = Path(__file__).parent.parent
+load_dotenv(project_root / ".env")
 
 
 def get_config():

@@ -41,7 +41,7 @@ Your project folder should now contain:
 imessage-stats/
 ├── chat.db          ← your iMessage database
 ├── Sources/         ← your contacts
-├── export.py
+├── scripts/
 ├── web/
 └── ...
 ```
@@ -103,15 +103,15 @@ Copy the 32-character ID (the part before `?v=`).
 ### 6. Configure your credentials
 
 ```bash
-cp notion/.env.example notion/.env
+cp .env.example .env
 ```
 
-Edit `notion/.env` with your API key and database ID.
+Edit `.env` with your API key and database ID.
 
 ### 7. Sync
 
 ```bash
-./scripts/notion
+uv run --with requests --with python-dotenv python scripts/notion_sync.py
 ```
 
 The script will add the required columns and sync your contacts. Run it again anytime to update.

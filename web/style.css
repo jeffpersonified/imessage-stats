@@ -63,7 +63,8 @@ body {
 }
 
 #contact-list::-webkit-scrollbar {
-  width: 6px;
+  width: 12px;
+  background: transparent;
 }
 
 #contact-list::-webkit-scrollbar-track {
@@ -71,8 +72,27 @@ body {
 }
 
 #contact-list::-webkit-scrollbar-thumb {
-  background: #333;
-  border-radius: 3px;
+  background: #555;
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+
+/* Also style main content scrollbar */
+.content::-webkit-scrollbar {
+  width: 12px;
+  background: transparent;
+}
+
+.content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.content::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 6px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
 }
 
 #contact-list li {
@@ -168,7 +188,7 @@ body {
   border: none;
   color: #444;
   font-family: inherit;
-  font-size: 11px;
+  font-size: 13px;
   padding: 4px 10px;
   cursor: pointer;
   transition: color 0.15s;
@@ -188,11 +208,9 @@ section {
 }
 
 section h2 {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: normal;
-  color: #444;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  color: var(--text-bright);
   margin-bottom: 12px;
 }
 
@@ -234,17 +252,17 @@ section p {
   font-size: 12px;
 }
 
-.stat-detail:not(:empty)::before {
-  content: "└── ";
-  color: #333;
+.detail-line {
+  display: block;
+  white-space: pre;
+  color: #666;
+}
+
+.detail-line:first-child {
+  margin-top: 4px;
 }
 
 /* Heatmap */
-#heatmap-peak {
-  color: var(--text);
-  font-size: 12px;
-}
-
 .heatmap-wrapper {
   display: flex;
   gap: 8px;

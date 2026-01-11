@@ -1,3 +1,0 @@
-# Optional: only needed for Notion sync
-requests>=2.28.0
-python-dotenv>=1.0.0
