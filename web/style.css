@@ -1004,11 +1004,12 @@ section p {
   gap: 2px;
 }
 
-.screenshot-btn {
+/* Primary button component */
+.btn-primary {
   flex-shrink: 0;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text);
+  background: var(--received);
+  border: 1px solid var(--received);
+  color: white;
   padding: 6px 12px;
   cursor: pointer;
   font-family: inherit;
@@ -1017,13 +1018,9 @@ section p {
   outline: none;
 }
 
-.screenshot-btn:hover {
-  border-color: var(--text);
-  color: var(--text-bright);
-}
-
-.screenshot-btn:focus {
-  outline: none;
+.btn-primary:hover {
+  background: #3377ee;
+  border-color: #3377ee;
 }
 
 /* Screenshot dialog */
