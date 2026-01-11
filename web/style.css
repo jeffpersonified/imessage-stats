@@ -962,6 +962,57 @@ section p {
   cursor: pointer;
   color: var(--text-bright);
   font-weight: 600;
+  position: relative;
+}
+
+.swear-word-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: #1a1a1a;
+  border: 1px solid #333;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: normal;
+  white-space: nowrap;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s, visibility 0.15s;
+  z-index: 100;
+  pointer-events: none;
+}
+
+.swear-word.revealed:hover .swear-word-tooltip {
+  opacity: 1;
+  visibility: visible;
+}
+
+.swear-word-tooltip .rank-item {
+  display: block;
+  color: var(--text);
+  margin: 2px 0;
+}
+
+.swear-word-tooltip .rank-item:first-child {
+  color: var(--text-bright);
+}
+
+.swear-word-tooltip .rank-num {
+  margin-right: 6px;
+}
+
+.swear-word-tooltip .rank-num.rank-1 {
+  color: #ffd700;
+}
+
+.swear-word-tooltip .rank-num.rank-2 {
+  color: #c0c0c0;
+}
+
+.swear-word-tooltip .rank-num.rank-3 {
+  color: #cd7f32;
 }
 
 /* Ranked lists (side by side) */

@@ -21,6 +21,8 @@ let isEveryoneView = false;
 let isNavigatingFromPopState = false; // Flag to avoid duplicate history entries
 let swearWordsRevealed = false; // Persists across year filter changes once revealed
 let swearWordScrambleIntervals = []; // Intervals for per-character scramble effect
+let globalSwearWordRevealed = false; // Separate state for global view swear word
+let globalSwearWordIntervals = []; // Separate intervals for global view
 
 // LLM theme analysis status tracking
 let llmStatus = null; // { pending: [...filenames...], completed: [...], total: N }
@@ -157,8 +159,16 @@ const laughComparisonEl = document.getElementById("laugh-comparison");
 const swearComparisonEl = document.getElementById("swear-comparison");
 const questionRatioEl = document.getElementById("question-ratio");
 const wordCountSummaryEl = document.getElementById("word-count-summary");
-const globalPatternsSection = document.getElementById("global-patterns-section");
-const globalWordCountSummaryEl = document.getElementById("global-word-count-summary");
+const globalPatternsSection = document.getElementById(
+  "global-patterns-section"
+);
+const globalWordCountSummaryEl = document.getElementById(
+  "global-word-count-summary"
+);
+const globalResponseTimeEl = document.getElementById("global-response-time");
+const globalLaughterEl = document.getElementById("global-laughter");
+const globalSwearingEl = document.getElementById("global-swearing");
+const globalQuestionsEl = document.getElementById("global-questions");
 const statTotalDetail = document.getElementById("stat-total-detail");
 const statSentDetail = document.getElementById("stat-sent-detail");
 const statReceivedDetail = document.getElementById("stat-received-detail");
@@ -408,6 +418,19 @@ function formatTime(seconds) {
   return `${hours} hour${hours === 1 ? "" : "s"}`;
 }
 
+// Build tooltip HTML for top swear words
+function buildSwearTooltipHtml(topWords) {
+  if (!topWords || topWords.length === 0) return "";
+  const top3 = topWords.slice(0, 3);
+  const items = top3
+    .map(
+      (item, i) =>
+        `<span class="rank-item"><span class="rank-num rank-${i + 1}">#${i + 1}</span>${item.word}</span>`
+    )
+    .join("");
+  return `<span class="swear-word-tooltip">${items}</span>`;
+}
+
 // Scramble characters (letters and symbols)
 const SCRAMBLE_CHARS = "abcdefghijklmnopqrstuvwxyz@#$%&*!?~^+";
 
@@ -416,26 +439,34 @@ function randomChar() {
   return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
 }
 
-// Clear all scramble intervals
-function clearScrambleIntervals() {
-  swearWordScrambleIntervals.forEach((id) => clearInterval(id));
-  swearWordScrambleIntervals = [];
+// Clear scramble intervals (isGlobal: true for global view, false for per-contact)
+function clearScrambleIntervals(isGlobal = false) {
+  const intervals = isGlobal
+    ? globalSwearWordIntervals
+    : swearWordScrambleIntervals;
+  intervals.forEach((id) => clearInterval(id));
+  if (isGlobal) {
+    globalSwearWordIntervals = [];
+  } else {
+    swearWordScrambleIntervals = [];
+  }
 }
 
 // Start the scramble animation with each character on its own timer
-function startScrambleAnimation(element, word) {
-  // Clear any existing intervals
-  clearScrambleIntervals();
+function startScrambleAnimation(element, word, isGlobal = false) {
+  clearScrambleIntervals(isGlobal);
 
   const chars = Array.from({ length: word.length }, () => randomChar());
-
-  // Set initial scrambled state
   element.textContent = chars.join("");
+
+  const intervals = isGlobal
+    ? globalSwearWordIntervals
+    : swearWordScrambleIntervals;
 
   // Create independent interval for each character position
   // Use staggered base intervals (400-600ms) so they don't sync up
   for (let i = 0; i < chars.length; i++) {
-    const baseInterval = 400 + Math.random() * 200; // 400-600ms per character
+    const baseInterval = 400 + Math.random() * 200;
     const intervalId = setInterval(() => {
       if (element.classList.contains("obscured")) {
         chars[i] = randomChar();
@@ -444,17 +475,19 @@ function startScrambleAnimation(element, word) {
         clearInterval(intervalId);
       }
     }, baseInterval);
-    swearWordScrambleIntervals.push(intervalId);
+    intervals.push(intervalId);
   }
 }
 
 // Reveal the word with sequential left-to-right animation
-function revealSwearWord(element, word) {
-  swearWordsRevealed = true;
+function revealSwearWord(element, word, topWords = [], isGlobal = false) {
+  if (isGlobal) {
+    globalSwearWordRevealed = true;
+  } else {
+    swearWordsRevealed = true;
+  }
 
-  // Stop scrambling
-  clearScrambleIntervals();
-
+  clearScrambleIntervals(isGlobal);
   element.classList.remove("obscured");
   element.classList.add("revealing");
 
@@ -467,11 +500,10 @@ function revealSwearWord(element, word) {
       clearInterval(revealInterval);
       element.classList.remove("revealing");
       element.classList.add("revealed");
-      element.textContent = word;
+      element.innerHTML = word + buildSwearTooltipHtml(topWords);
       return;
     }
 
-    // Build the display: revealed chars + scrambled remainder
     const revealed = chars.slice(0, revealedCount + 1).join("");
     const scrambledRemainder = chars
       .slice(revealedCount + 1)
@@ -484,11 +516,172 @@ function revealSwearWord(element, word) {
 }
 
 // Re-obscure the word and restart scramble animation
-function obscureSwearWord(element, word) {
-  swearWordsRevealed = false;
+function obscureSwearWord(element, word, isGlobal = false) {
+  if (isGlobal) {
+    globalSwearWordRevealed = false;
+  } else {
+    swearWordsRevealed = false;
+  }
   element.classList.remove("revealed");
   element.classList.add("obscured");
-  startScrambleAnimation(element, word);
+  startScrambleAnimation(element, word, isGlobal);
+}
+
+// Render global patterns section for Everyone view
+function renderGlobalPatterns(year) {
+  // Clear any existing global swear word animation
+  clearScrambleIntervals(true);
+
+  const isAllTime = year === "all";
+
+  let hasAnyPattern = false;
+
+  // Word count summary
+  const wordData = isAllTime
+    ? everyoneData.words
+    : everyoneData.by_year[year]?.words;
+  if (wordData && (wordData.words_sent > 0 || wordData.words_received > 0)) {
+    const wordsSent = wordData.words_sent || 0;
+    const wordsReceived = wordData.words_received || 0;
+    const totalWords = wordsSent + wordsReceived;
+    const youPct = Math.round((wordsSent / totalWords) * 100);
+    const totalFormatted = formatNumber(totalWords);
+
+    const wordIcon = '<span class="pattern-icon">✎</span>';
+    const yearSuffix = isAllTime
+      ? ""
+      : ` in <span class="stat-highlight">${year}</span>`;
+    globalWordCountSummaryEl.innerHTML = `${wordIcon}<span class="you">You</span> sent <span class="stat-highlight">${totalFormatted}</span> words across all your conversations${yearSuffix} — <span class="stat-highlight">${youPct}%</span> of those are your words`;
+    hasAnyPattern = true;
+  } else {
+    globalWordCountSummaryEl.textContent = "";
+  }
+
+  // Response time
+  const responseData = everyoneData.response_stats;
+  if (responseData) {
+    const stats = responseData[year] || responseData.all || {};
+    const youTime = formatTime(stats.you_avg_seconds);
+
+    if (youTime) {
+      const responseIcon = '<span class="pattern-icon">⏱</span>';
+      if (isAllTime) {
+        globalResponseTimeEl.innerHTML = `${responseIcon}On average, <span class="you">you</span> respond to messages in about <span class="stat-highlight">${youTime}</span>`;
+      } else {
+        globalResponseTimeEl.innerHTML = `${responseIcon}On average, <span class="you">you</span> responded to messages in about <span class="stat-highlight">${youTime}</span> in <span class="stat-highlight">${year}</span>`;
+      }
+      hasAnyPattern = true;
+    } else {
+      globalResponseTimeEl.textContent = "";
+    }
+  } else {
+    globalResponseTimeEl.textContent = "";
+  }
+
+  // Laughter (LOL count)
+  const laughData = everyoneData.laughter;
+  if (laughData) {
+    const stats = laughData[year] || laughData.all || {};
+    const count = stats.count || 0;
+
+    if (count > 0) {
+      const laughIcon = '<span class="pattern-icon">☺</span>';
+      const countFormatted = formatNumber(count);
+      if (isAllTime) {
+        globalLaughterEl.innerHTML = `${laughIcon}<span class="you">You've</span> LOL'd <span class="stat-highlight">${countFormatted}</span> times across all of your chats`;
+      } else {
+        globalLaughterEl.innerHTML = `${laughIcon}<span class="you">You</span> LOL'd <span class="stat-highlight">${countFormatted}</span> times in <span class="stat-highlight">${year}</span>`;
+      }
+      hasAnyPattern = true;
+    } else {
+      globalLaughterEl.textContent = "";
+    }
+  } else {
+    globalLaughterEl.textContent = "";
+  }
+
+  // Swearing with favorite word
+  const profanityData = everyoneData.profanity;
+  if (profanityData) {
+    const stats = profanityData[year] || profanityData.all || {};
+    const count = stats.count || 0;
+    const topWord = stats.top_words?.[0];
+    const topWords = stats.top_words || [];
+
+    if (count > 0) {
+      const swearIcon = '<span class="pattern-icon">※</span>';
+      const countFormatted = formatNumber(count);
+
+      let mainText = `${swearIcon}<span class="you">You</span> swore <span class="stat-highlight">${countFormatted}</span> times in your conversations`;
+
+      // Add favorite swear word with scramble animation
+      if (topWord) {
+        const favoriteWord = topWord.word;
+        const stateClass = globalSwearWordRevealed ? "revealed" : "obscured";
+        const favoriteLabel = isAllTime
+          ? "Your favorite word of all time:"
+          : "Word of the year:";
+        const tooltipHtml = buildSwearTooltipHtml(topWords);
+        mainText += `. <span class="favorite-swear">${favoriteLabel} <span class="swear-word global-swear-word ${stateClass}" data-word="${favoriteWord}" data-top-words='${JSON.stringify(topWords)}'>${tooltipHtml}</span></span>`;
+      }
+
+      globalSwearingEl.innerHTML = mainText;
+
+      // Set up the swear word element with toggle behavior
+      if (topWord) {
+        const swearWordEl =
+          globalSwearingEl.querySelector(".global-swear-word");
+        const favoriteWord = topWord.word;
+
+        if (swearWordEl && favoriteWord) {
+          if (!globalSwearWordRevealed) {
+            startScrambleAnimation(swearWordEl, favoriteWord, true);
+          } else {
+            swearWordEl.innerHTML = favoriteWord + buildSwearTooltipHtml(topWords);
+          }
+
+          // Click to toggle
+          swearWordEl.addEventListener("click", () => {
+            if (swearWordEl.classList.contains("obscured")) {
+              revealSwearWord(swearWordEl, favoriteWord, topWords, true);
+            } else if (swearWordEl.classList.contains("revealed")) {
+              obscureSwearWord(swearWordEl, favoriteWord, true);
+            }
+          });
+        }
+      }
+      hasAnyPattern = true;
+    } else {
+      globalSwearingEl.textContent = "";
+    }
+  } else {
+    globalSwearingEl.textContent = "";
+  }
+
+  // Questions
+  const questionData = everyoneData.questions;
+  if (questionData) {
+    const stats = questionData[year] || questionData.all || {};
+    const count = stats.count || 0;
+
+    if (count > 0) {
+      const questionIcon = '<span class="pattern-icon">?</span>';
+      const countFormatted = formatNumber(count);
+      if (isAllTime) {
+        globalQuestionsEl.innerHTML = `${questionIcon}<span class="you">You</span> asked <span class="stat-highlight">${countFormatted}</span> questions — curious, indeed`;
+      } else {
+        globalQuestionsEl.innerHTML = `${questionIcon}<span class="you">You</span> asked <span class="stat-highlight">${countFormatted}</span> questions in <span class="stat-highlight">${year}</span> — I hope you found the right answers`;
+      }
+      hasAnyPattern = true;
+    } else {
+      globalQuestionsEl.textContent = "";
+    }
+  } else {
+    globalQuestionsEl.textContent = "";
+  }
+
+  // Show/hide the patterns section based on whether we have any content
+  globalPatternsSection.style.display = hasAnyPattern ? "block" : "none";
 }
 
 // Render conversation patterns (response times, conversation starters, profanity comparison)
@@ -653,11 +846,14 @@ function renderPatterns(data, year = "all") {
     const themCount = yearData.received || 0;
     const topSent = yearData.top_sent?.[0]; // Your top swear word
     const topReceived = yearData.top_received?.[0]; // Their top swear word
+    const topSentWords = yearData.top_sent || [];
+    const topReceivedWords = yearData.top_received || [];
 
     if (youCount > 0 || themCount > 0) {
       let mainText = "";
       let favoriteWord = null;
       let favoriteLabel = "";
+      let topWords = [];
 
       if (youCount > themCount) {
         const verb = usePastTense ? "swore" : "swear";
@@ -665,6 +861,7 @@ function renderPatterns(data, year = "all") {
         if (topSent) {
           favoriteWord = topSent.word;
           favoriteLabel = "Your favorite:";
+          topWords = topSentWords;
         }
       } else if (themCount > youCount) {
         const verb = usePastTense ? "swore" : "swears";
@@ -672,6 +869,7 @@ function renderPatterns(data, year = "all") {
         if (topReceived) {
           favoriteWord = topReceived.word;
           favoriteLabel = `${name}'s favorite:`;
+          topWords = topReceivedWords;
         }
       } else {
         const verb = usePastTense ? "swore" : "swear";
@@ -680,14 +878,15 @@ function renderPatterns(data, year = "all") {
         if (topSent) {
           favoriteWord = topSent.word;
           favoriteLabel = "Your favorite:";
+          topWords = topSentWords;
         }
       }
 
       // Add favorite swear word (matrix scramble until clicked)
       if (favoriteWord) {
         const stateClass = swearWordsRevealed ? "revealed" : "obscured";
-        const displayWord = swearWordsRevealed ? favoriteWord : ""; // Will be set by animation
-        mainText += `. <span class="favorite-swear">${favoriteLabel} <span class="swear-word ${stateClass}" data-word="${favoriteWord}">${displayWord}</span></span>`;
+        const tooltipHtml = buildSwearTooltipHtml(topWords);
+        mainText += `. <span class="favorite-swear">${favoriteLabel} <span class="swear-word ${stateClass}" data-word="${favoriteWord}">${tooltipHtml}</span></span>`;
       }
 
       swearComparisonEl.innerHTML = mainText;
@@ -699,14 +898,14 @@ function renderPatterns(data, year = "all") {
           // Start matrix scramble animation
           startScrambleAnimation(swearWordEl, favoriteWord);
         } else {
-          // Already revealed, just show the word
-          swearWordEl.textContent = favoriteWord;
+          // Already revealed, just show the word with tooltip
+          swearWordEl.innerHTML = favoriteWord + buildSwearTooltipHtml(topWords);
         }
 
         // Click to toggle between revealed and obscured
         swearWordEl.addEventListener("click", () => {
           if (swearWordEl.classList.contains("obscured")) {
-            revealSwearWord(swearWordEl, favoriteWord);
+            revealSwearWord(swearWordEl, favoriteWord, topWords);
           } else if (swearWordEl.classList.contains("revealed")) {
             obscureSwearWord(swearWordEl, favoriteWord);
           }
@@ -2248,22 +2447,8 @@ function loadEveryoneYear(year) {
     );
   }
 
-  // Update global word count summary
-  const wordData = year === "all" ? everyoneData.words : everyoneData.by_year[year]?.words;
-  if (wordData && (wordData.words_sent > 0 || wordData.words_received > 0)) {
-    const wordsSent = wordData.words_sent || 0;
-    const wordsReceived = wordData.words_received || 0;
-    const totalWords = wordsSent + wordsReceived;
-    const youPct = Math.round((wordsSent / totalWords) * 100);
-    const totalFormatted = formatNumber(totalWords);
-
-    const wordIcon = '<span class="pattern-icon">✎</span>';
-    const yearLabel = year === "all" ? '<span class="stat-highlight">all time</span>' : `in <span class="stat-highlight">${year}</span>`;
-    globalWordCountSummaryEl.innerHTML = `${wordIcon}You've sent <span class="stat-highlight">${totalFormatted}</span> words across all of your conversations ${yearLabel} — <span class="you">you</span> sent <span class="stat-highlight">${youPct}%</span>`;
-    globalPatternsSection.style.display = "block";
-  } else {
-    globalPatternsSection.style.display = "none";
-  }
+  // Update global patterns section
+  renderGlobalPatterns(year);
 
   // Update chart and heatmap
   currentContactData = { monthly };

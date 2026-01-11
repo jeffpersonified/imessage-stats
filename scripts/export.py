@@ -24,6 +24,7 @@ from queries import (
     get_global_heatmap, get_global_attachments, get_global_links, get_yearly_links,
     get_global_emoji, get_yearly_emoji, get_yearly_top_identifiers, get_yearly_data,
     get_global_word_counts, get_yearly_word_counts,
+    get_global_response_stats, get_global_laughter, get_global_profanity, get_global_questions,
 )
 
 
@@ -398,6 +399,14 @@ def main():
     print("  Counting words...")
     global_word_counts = get_global_word_counts(cursor)
     yearly_word_counts = get_yearly_word_counts(cursor)
+    print("  Computing response times...")
+    global_response_stats = get_global_response_stats(cursor)
+    print("  Counting laughter...")
+    global_laughter = get_global_laughter(cursor)
+    print("  Counting profanity...")
+    global_profanity = get_global_profanity(cursor)
+    print("  Counting questions...")
+    global_questions = get_global_questions(cursor)
     print("  Computing per-year breakdowns...")
     yearly_data = get_yearly_data(cursor, global_monthly, contacts_export, yearly_links, yearly_emoji, yearly_word_counts)
     global_elapsed = format_duration(time.time() - global_start_time)
@@ -429,6 +438,10 @@ def main():
         "links": global_links,
         "emoji": global_emoji,
         "words": global_word_counts,
+        "response_stats": global_response_stats,
+        "laughter": global_laughter,
+        "profanity": global_profanity,
+        "questions": global_questions,
         "by_year": yearly_data,
         "top_contacts": all_time_top_contacts,
     }

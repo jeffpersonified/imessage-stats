@@ -707,6 +707,243 @@ def get_yearly_top_identifiers(cursor, top_n=8):
     return set(row[0] for row in cursor.fetchall())
 
 
+def get_global_response_stats(cursor):
+    """Calculate global average response times across all 1-on-1 conversations.
+
+    Computes response times per conversation (handle) and returns weighted averages.
+    Returns dict with 'all' for all-time stats and per-year keys.
+    """
+    # Get all messages grouped by handle_id, ordered by date within each handle
+    cursor.execute("""
+        SELECT
+            h.ROWID as handle_rowid,
+            m.date,
+            m.is_from_me,
+            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
+        JOIN handle h ON chj.handle_id = h.ROWID
+        WHERE c.style = 45
+        ORDER BY h.ROWID, m.date
+    """)
+
+    # Group messages by handle
+    messages_by_handle = defaultdict(list)
+    for handle_rowid, ts, is_from_me, year in cursor.fetchall():
+        if ts:
+            messages_by_handle[handle_rowid].append((ts, is_from_me, year))
+
+    # Compute response times across all handles
+    all_your_response_times = []
+    yearly_your_response_times = defaultdict(list)
+
+    RESPONSE_MAX = 60 * 60 * 1e9  # 1 hour in nanoseconds
+
+    for handle_rowid, messages in messages_by_handle.items():
+        if len(messages) < 2:
+            continue
+
+        prev_ts, prev_from_me, prev_year = messages[0]
+
+        for ts, is_from_me, year in messages[1:]:
+            gap = ts - prev_ts
+
+            # Check if this is a response (direction changed) within the max window
+            if is_from_me != prev_from_me and gap < RESPONSE_MAX:
+                response_seconds = gap / 1e9
+                if is_from_me:
+                    # Your response
+                    all_your_response_times.append(response_seconds)
+                    if year:
+                        yearly_your_response_times[year].append(response_seconds)
+
+            prev_ts, prev_from_me, prev_year = ts, is_from_me, year
+
+    # Calculate averages
+    result = {}
+
+    if all_your_response_times:
+        result["all"] = {
+            "you_avg_seconds": round(sum(all_your_response_times) / len(all_your_response_times)),
+            "response_count": len(all_your_response_times),
+        }
+
+    for year, times in yearly_your_response_times.items():
+        if times:
+            result[year] = {
+                "you_avg_seconds": round(sum(times) / len(times)),
+                "response_count": len(times),
+            }
+
+    return result if result else None
+
+
+def get_global_laughter(cursor):
+    """Count laughter indicators (LOL, haha, etc.) across all 1-on-1 conversations.
+
+    Returns dict with counts per year and overall ('all').
+    Only counts sent messages (your LOLs).
+    """
+    from analyzers.laughter import count_laughs_in_text
+
+    cursor.execute("""
+        SELECT
+            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
+            m.text,
+            m.attributedBody
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+          AND m.is_from_me = 1
+    """)
+
+    from utils import extract_text_from_attributed_body
+
+    by_year = defaultdict(int)
+    total = 0
+
+    for year, text, attr_body in cursor.fetchall():
+        # Prefer text column, fall back to extracting from attributedBody
+        msg_text = text if text and text.strip() else None
+        if not msg_text and attr_body:
+            msg_text = extract_text_from_attributed_body(attr_body)
+
+        if msg_text:
+            count, _ = count_laughs_in_text(msg_text)
+            if count > 0:
+                total += count
+                if year:
+                    by_year[year] += count
+
+    result = {}
+    if total > 0:
+        result["all"] = {"count": total}
+
+    for year, count in by_year.items():
+        result[year] = {"count": count}
+
+    return result if result else None
+
+
+def get_global_profanity(cursor):
+    """Count profanity across all 1-on-1 conversations.
+
+    Returns dict with counts per year and overall ('all'), including top swear words.
+    Only counts sent messages (your swearing).
+    """
+    from analyzers.profanity import _load_wordlist, count_profanity_in_text
+
+    wordlist = _load_wordlist()
+    if not wordlist:
+        return None
+
+    cursor.execute("""
+        SELECT
+            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
+            m.text,
+            m.attributedBody
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+          AND m.is_from_me = 1
+    """)
+
+    from utils import extract_text_from_attributed_body
+
+    by_year = defaultdict(int)
+    total = 0
+
+    # Track word frequencies
+    words_all = defaultdict(int)
+    words_by_year = defaultdict(lambda: defaultdict(int))
+
+    for year, text, attr_body in cursor.fetchall():
+        # Prefer text column, fall back to extracting from attributedBody
+        msg_text = text if text and text.strip() else None
+        if not msg_text and attr_body:
+            msg_text = extract_text_from_attributed_body(attr_body)
+
+        if msg_text:
+            count, word_counts = count_profanity_in_text(msg_text, wordlist)
+            if count > 0:
+                total += count
+                if year:
+                    by_year[year] += count
+                for word, cnt in word_counts.items():
+                    words_all[word] += cnt
+                    if year:
+                        words_by_year[year][word] += cnt
+
+    result = {}
+    if total > 0:
+        # Get top 5 words overall
+        top_words = sorted(words_all.items(), key=lambda x: x[1], reverse=True)[:5]
+        result["all"] = {
+            "count": total,
+            "top_words": [{"word": w, "count": c} for w, c in top_words],
+        }
+
+    for year, count in by_year.items():
+        # Get top 5 words for this year
+        year_top = sorted(words_by_year[year].items(), key=lambda x: x[1], reverse=True)[:5]
+        result[year] = {
+            "count": count,
+            "top_words": [{"word": w, "count": c} for w, c in year_top],
+        }
+
+    return result if result else None
+
+
+def get_global_questions(cursor):
+    """Count questions asked across all 1-on-1 conversations.
+
+    Returns dict with counts per year and overall ('all').
+    Only counts sent messages (your questions).
+    """
+    cursor.execute("""
+        SELECT
+            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
+            m.text,
+            m.attributedBody
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+          AND m.is_from_me = 1
+    """)
+
+    from utils import extract_text_from_attributed_body
+
+    by_year = defaultdict(int)
+    total = 0
+
+    for year, text, attr_body in cursor.fetchall():
+        # Prefer text column, fall back to extracting from attributedBody
+        msg_text = text if text and text.strip() else None
+        if not msg_text and attr_body:
+            msg_text = extract_text_from_attributed_body(attr_body)
+
+        if msg_text:
+            question_count = msg_text.count("?")
+            if question_count > 0:
+                total += question_count
+                if year:
+                    by_year[year] += question_count
+
+    result = {}
+    if total > 0:
+        result["all"] = {"count": total}
+
+    for year, count in by_year.items():
+        result[year] = {"count": count}
+
+    return result if result else None
+
+
 def get_yearly_data(cursor, global_monthly, contacts_export, yearly_links=None, yearly_emoji=None, yearly_word_counts=None):
     """Get per-year statistics including top contacts and busiest month."""
     if yearly_links is None:
