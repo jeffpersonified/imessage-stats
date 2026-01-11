@@ -156,6 +156,9 @@ const responseTimeEl = document.getElementById("response-time");
 const laughComparisonEl = document.getElementById("laugh-comparison");
 const swearComparisonEl = document.getElementById("swear-comparison");
 const questionRatioEl = document.getElementById("question-ratio");
+const wordCountSummaryEl = document.getElementById("word-count-summary");
+const globalPatternsSection = document.getElementById("global-patterns-section");
+const globalWordCountSummaryEl = document.getElementById("global-word-count-summary");
 const statTotalDetail = document.getElementById("stat-total-detail");
 const statSentDetail = document.getElementById("stat-sent-detail");
 const statReceivedDetail = document.getElementById("stat-received-detail");
@@ -332,6 +335,7 @@ async function loadContact(filename, name, total, sent, received, firstDate) {
   yearFilterSection.style.display = "none";
   topContactsSection.style.display = "none";
   busiestMonthSection.style.display = "none";
+  globalPatternsSection.style.display = "none";
   document.getElementById("global-emoji-section").style.display = "none";
   patternsSection.style.display = "block";
 
@@ -506,6 +510,39 @@ function renderPatterns(data, year = "all") {
   // Use past tense for years before the current year
   const currentYear = new Date().getFullYear().toString();
   const usePastTense = year !== "all" && year < currentYear;
+
+  // Word count summary (who talks more)
+  const wordIcon = '<span class="pattern-icon">✎</span>';
+  const messageStyleData = data.analysis?.message_style;
+  if (messageStyleData) {
+    const yearData = messageStyleData[year] || messageStyleData.all || {};
+    const sentWords = yearData.sent?.total_words || 0;
+    const receivedWords = yearData.received?.total_words || 0;
+    const totalWords = sentWords + receivedWords;
+
+    if (totalWords > 0) {
+      const youPct = Math.round((sentWords / totalWords) * 100);
+      const themPct = 100 - youPct;
+      const totalFormatted = formatNumber(totalWords);
+      const verb = usePastTense ? "sent" : "have sent";
+
+      let mainText = `${wordIcon}<span class="you">You</span> and <span class="them">${name}</span> ${verb} each other <span class="stat-highlight">${totalFormatted}</span> words — `;
+
+      if (youPct > themPct) {
+        mainText += `<span class="you">you</span> sent <span class="stat-highlight">${youPct}%</span>`;
+      } else if (themPct > youPct) {
+        mainText += `<span class="them">${name}</span> sent <span class="stat-highlight">${themPct}%</span>`;
+      } else {
+        mainText += `you each sent half`;
+      }
+
+      wordCountSummaryEl.innerHTML = mainText;
+    } else {
+      wordCountSummaryEl.textContent = "";
+    }
+  } else {
+    wordCountSummaryEl.textContent = "";
+  }
 
   // Conversation starter
   const starterIcon = '<span class="pattern-icon">▶</span>';
@@ -700,12 +737,13 @@ function renderPatterns(data, year = "all") {
 
       let mainText = `${questionIcon}<span class="you">You</span> and <span class="them">${name}</span> ${verb} each other ${totalFormatted} questions — `;
 
-      if (youQuestions > themQuestions) {
-        mainText += `<span class="you">You</span> asked <span class="stat-highlight">${youPct}%</span> of them`;
-      } else if (themQuestions > youQuestions) {
-        mainText += `<span class="them">${name}</span> asked <span class="stat-highlight">${themPct}%</span> of them`;
+      // If within ~5% of 50/50, call it "about half"
+      if (youPct >= 45 && youPct <= 55) {
+        mainText += `you each asked about half`;
+      } else if (youPct > themPct) {
+        mainText += `<span class="you">you</span> asked <span class="stat-highlight">${youPct}%</span>`;
       } else {
-        mainText += `<span class="you">You</span> each asked half`;
+        mainText += `<span class="them">${name}</span> asked <span class="stat-highlight">${themPct}%</span>`;
       }
 
       questionRatioEl.innerHTML = mainText;
@@ -2208,6 +2246,23 @@ function loadEveryoneYear(year) {
       everyoneData.by_year[year].attachments,
       everyoneData.by_year[year].links
     );
+  }
+
+  // Update global word count summary
+  const wordData = year === "all" ? everyoneData.words : everyoneData.by_year[year]?.words;
+  if (wordData && (wordData.words_sent > 0 || wordData.words_received > 0)) {
+    const wordsSent = wordData.words_sent || 0;
+    const wordsReceived = wordData.words_received || 0;
+    const totalWords = wordsSent + wordsReceived;
+    const youPct = Math.round((wordsSent / totalWords) * 100);
+    const totalFormatted = formatNumber(totalWords);
+
+    const wordIcon = '<span class="pattern-icon">✎</span>';
+    const yearLabel = year === "all" ? '<span class="stat-highlight">all time</span>' : `in <span class="stat-highlight">${year}</span>`;
+    globalWordCountSummaryEl.innerHTML = `${wordIcon}You've sent <span class="stat-highlight">${totalFormatted}</span> words across all of your conversations ${yearLabel} — <span class="you">you</span> sent <span class="stat-highlight">${youPct}%</span>`;
+    globalPatternsSection.style.display = "block";
+  } else {
+    globalPatternsSection.style.display = "none";
   }
 
   // Update chart and heatmap

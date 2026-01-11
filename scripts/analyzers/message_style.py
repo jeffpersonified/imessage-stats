@@ -26,6 +26,7 @@ def analyze_message_style(messages):
         - "avg_length": average word count per message
         - "avg_per_turn": average messages sent per turn (before other responds)
         - "total_messages": total message count
+        - "total_words": total word count
     """
     if not messages:
         return None
@@ -87,19 +88,22 @@ def analyze_message_style(messages):
             turn_counts = data[direction]["turn_counts"]
 
             if lengths:
-                avg_length = sum(lengths) / len(lengths)
+                total_words = sum(lengths)
+                avg_length = total_words / len(lengths)
                 avg_per_turn = sum(turn_counts) / len(turn_counts) if turn_counts else 1.0
 
                 result[direction] = {
                     "avg_length": round(avg_length, 1),
                     "avg_per_turn": round(avg_per_turn, 2),
                     "total_messages": len(lengths),
+                    "total_words": total_words,
                 }
             else:
                 result[direction] = {
                     "avg_length": 0,
                     "avg_per_turn": 1.0,
                     "total_messages": 0,
+                    "total_words": 0,
                 }
 
         return result

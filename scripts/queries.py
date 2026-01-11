@@ -596,6 +596,84 @@ def get_yearly_emoji(cursor):
     return result
 
 
+def get_global_word_counts(cursor):
+    """Get total word counts across all 1-on-1 conversations.
+
+    Extracts text from attributedBody when text column is empty (newer macOS).
+    Returns total words sent and received.
+    """
+    cursor.execute("""
+        SELECT
+            m.text,
+            m.attributedBody,
+            m.is_from_me
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+    """)
+
+    words_sent = 0
+    words_received = 0
+
+    for text, attr_body, is_from_me in cursor.fetchall():
+        # Prefer text column, fall back to extracting from attributedBody
+        msg_text = text if text and text.strip() else None
+        if not msg_text and attr_body:
+            msg_text = extract_text_from_attributed_body(attr_body)
+
+        if msg_text:
+            word_count = len(msg_text.split())
+            if is_from_me:
+                words_sent += word_count
+            else:
+                words_received += word_count
+
+    return {
+        "words_sent": words_sent,
+        "words_received": words_received,
+    }
+
+
+def get_yearly_word_counts(cursor):
+    """Get word counts by year across all 1-on-1 conversations.
+
+    Extracts text from attributedBody when text column is empty (newer macOS).
+    Returns words sent and received per year.
+    """
+    cursor.execute("""
+        SELECT
+            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
+            m.text,
+            m.attributedBody,
+            m.is_from_me
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+    """)
+
+    yearly_words = defaultdict(lambda: {"words_sent": 0, "words_received": 0})
+
+    for year, text, attr_body, is_from_me in cursor.fetchall():
+        if not year:
+            continue
+
+        # Prefer text column, fall back to extracting from attributedBody
+        msg_text = text if text and text.strip() else None
+        if not msg_text and attr_body:
+            msg_text = extract_text_from_attributed_body(attr_body)
+
+        if msg_text:
+            word_count = len(msg_text.split())
+            if is_from_me:
+                yearly_words[year]["words_sent"] += word_count
+            else:
+                yearly_words[year]["words_received"] += word_count
+
+    return dict(yearly_words)
+
+
 def get_yearly_top_identifiers(cursor, top_n=8):
     """Get identifiers that appear in any year's top N by message count.
 
@@ -627,12 +705,14 @@ def get_yearly_top_identifiers(cursor, top_n=8):
     return set(row[0] for row in cursor.fetchall())
 
 
-def get_yearly_data(cursor, global_monthly, contacts_export, yearly_links=None, yearly_emoji=None):
+def get_yearly_data(cursor, global_monthly, contacts_export, yearly_links=None, yearly_emoji=None, yearly_word_counts=None):
     """Get per-year statistics including top contacts and busiest month."""
     if yearly_links is None:
         yearly_links = {}
     if yearly_emoji is None:
         yearly_emoji = {}
+    if yearly_word_counts is None:
+        yearly_word_counts = {}
     # Build a lookup from identifier to contact export data
     contact_by_identifier = {}
     for c in contacts_export:
@@ -770,6 +850,7 @@ def get_yearly_data(cursor, global_monthly, contacts_export, yearly_links=None, 
             "attachments": yearly_attachments[year],
             "links": yearly_links.get(year, {"links_sent": 0, "links_received": 0}),
             "emoji": yearly_emoji.get(year, {"total": 0, "top": []}),
+            "words": yearly_word_counts.get(year, {"words_sent": 0, "words_received": 0}),
             "top_contacts": top_contacts,
             "busiest_month": busiest_month,
         }
