@@ -3,6 +3,10 @@ set -e
 
 cd "$(dirname "$0")/.."
 
+# First argument is the port, default to 8080
+PORT="${1:-8080}"
+shift 2>/dev/null || true
+
 # Check for --fake flag
 FAKE_MODE=""
 EXPORT_ARGS=()
@@ -72,8 +76,8 @@ echo "Exporting your iMessage data..."
 python3 scripts/export.py "${EXPORT_ARGS[@]}"
 
 # Start the server in the background
-echo "Starting server at http://localhost:8080..."
-cd web && python3 -m http.server 8080 &
+echo "Starting server at http://localhost:$PORT..."
+cd web && python3 -m http.server $PORT &
 SERVER_PID=$!
 cd ..
 
@@ -83,7 +87,7 @@ trap "kill $SERVER_PID 2>/dev/null" EXIT
 # Wait for server to be ready
 echo "Waiting for server..."
 for i in {1..30}; do
-  if curl -s -o /dev/null http://localhost:8080 2>/dev/null; then
+  if curl -s -o /dev/null http://localhost:$PORT 2>/dev/null; then
     break
   fi
   sleep 0.1
@@ -91,7 +95,7 @@ done
 
 # Open browser once server is ready
 echo "Opening browser..."
-open "http://localhost:8080${FAKE_MODE}"
+open "http://localhost:$PORT${FAKE_MODE}"
 
 # Wait for server process (Ctrl+C to stop)
 echo "Server running (Ctrl+C to stop)"
