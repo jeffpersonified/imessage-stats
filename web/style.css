@@ -653,6 +653,7 @@ section p {
   color: #444;
   font-size: inherit;
   font-weight: normal;
+  text-transform: none;
   cursor: help;
   position: relative;
   vertical-align: baseline;
