@@ -1,2 +1,2 @@
 #!/bin/bash
-cd "$(dirname "$0")/.." && python3 export.py "$@"
+cd "$(dirname "$0")/.." && rm -rf web/data && mkdir -p web/data && touch web/data/.gitkeep && python3 export.py "$@"

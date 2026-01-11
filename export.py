@@ -9,6 +9,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -127,9 +128,157 @@ def get_monthly_messages(cursor, handle_ids):
     ]
 
 
-def safe_filename(identifier):
-    """Create a safe filename from phone/email."""
-    return re.sub(r"[^\w\-.]", "_", identifier)
+def get_time_heatmap(cursor, handle_ids):
+    """Get message counts by day of week and hour for a heatmap."""
+    placeholders = ",".join("?" * len(handle_ids))
+    cursor.execute(f"""
+        SELECT
+            CAST(strftime('%w', datetime(m.date/1000000000, 'unixepoch', '+31 years')) AS INTEGER) as day,
+            CAST(strftime('%H', datetime(m.date/1000000000, 'unixepoch', '+31 years')) AS INTEGER) as hour,
+            COUNT(*) as count
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
+        WHERE chj.handle_id IN ({placeholders}) AND c.style = 45
+        GROUP BY day, hour
+    """, handle_ids)
+
+    # Initialize 7x24 grid (days x hours)
+    heatmap = [[0] * 24 for _ in range(7)]
+    for day, hour, count in cursor.fetchall():
+        if day is not None and hour is not None:
+            heatmap[day][hour] = count
+
+    return heatmap
+
+
+def get_attachments(cursor, handle_ids):
+    """Get attachment counts by type."""
+    placeholders = ",".join("?" * len(handle_ids))
+    cursor.execute(f"""
+        SELECT
+            a.mime_type,
+            m.is_from_me,
+            COUNT(*) as count
+        FROM attachment a
+        JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
+        JOIN message m ON maj.message_id = m.ROWID
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
+        WHERE chj.handle_id IN ({placeholders}) AND c.style = 45
+        GROUP BY a.mime_type, m.is_from_me
+    """, handle_ids)
+
+    attachments = {
+        "photos_sent": 0, "photos_received": 0,
+        "videos_sent": 0, "videos_received": 0,
+        "audio_sent": 0, "audio_received": 0,
+        "gifs_sent": 0, "gifs_received": 0,
+    }
+
+    for mime_type, is_from_me, count in cursor.fetchall():
+        if not mime_type:
+            continue
+        direction = "sent" if is_from_me else "received"
+        if mime_type.startswith("image/gif"):
+            attachments[f"gifs_{direction}"] += count
+        elif mime_type.startswith("image/"):
+            attachments[f"photos_{direction}"] += count
+        elif mime_type.startswith("video/"):
+            attachments[f"videos_{direction}"] += count
+        elif mime_type.startswith("audio/"):
+            attachments[f"audio_{direction}"] += count
+
+    return attachments
+
+
+def get_response_stats(cursor, handle_ids):
+    """Calculate average response times and conversation starter percentage."""
+    placeholders = ",".join("?" * len(handle_ids))
+
+    # Get all messages ordered by date
+    cursor.execute(f"""
+        SELECT m.date, m.is_from_me
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
+        WHERE chj.handle_id IN ({placeholders}) AND c.style = 45
+        ORDER BY m.date
+    """, handle_ids)
+
+    messages = [(ts, is_from_me) for ts, is_from_me in cursor.fetchall() if ts]
+
+    if len(messages) < 2:
+        return {"you_avg_seconds": None, "them_avg_seconds": None, "you_start_pct": None}
+
+    # Calculate response times and conversation starters
+    CONVERSATION_GAP = 4 * 60 * 60 * 1e9  # 4 hours in nanoseconds
+    RESPONSE_MAX = 60 * 60 * 1e9  # Only count responses within 1 hour as actual responses
+
+    your_response_times = []
+    their_response_times = []
+    conversations_you_started = 0
+    conversations_they_started = 0
+
+    prev_ts, prev_from_me = messages[0]
+
+    for ts, is_from_me in messages[1:]:
+        gap = ts - prev_ts
+
+        # Check if this is a new conversation
+        if gap > CONVERSATION_GAP:
+            if is_from_me:
+                conversations_you_started += 1
+            else:
+                conversations_they_started += 1
+        # Otherwise, check if this is a response
+        elif is_from_me != prev_from_me and gap < RESPONSE_MAX:
+            response_seconds = gap / 1e9
+            if is_from_me:
+                your_response_times.append(response_seconds)
+            else:
+                their_response_times.append(response_seconds)
+
+        prev_ts, prev_from_me = ts, is_from_me
+
+    # Calculate averages
+    you_avg = sum(your_response_times) / len(your_response_times) if your_response_times else None
+    them_avg = sum(their_response_times) / len(their_response_times) if their_response_times else None
+
+    total_convos = conversations_you_started + conversations_they_started
+    you_start_pct = conversations_you_started / total_convos if total_convos > 0 else None
+
+    return {
+        "you_avg_seconds": round(you_avg) if you_avg else None,
+        "them_avg_seconds": round(them_avg) if them_avg else None,
+        "you_start_pct": round(you_start_pct, 2) if you_start_pct is not None else None
+    }
+
+
+def slugify(text):
+    """Convert text to URL-friendly slug."""
+    # Lowercase and replace spaces with hyphens
+    slug = text.lower().strip().replace(" ", "-")
+    # Remove non-alphanumeric characters except hyphens
+    slug = re.sub(r"[^a-z0-9\-]", "", slug)
+    # Collapse multiple hyphens
+    slug = re.sub(r"-+", "-", slug)
+    return slug.strip("-")
+
+
+def safe_filename(name, identifier):
+    """Create a safe filename from contact name and identifier."""
+    slug = slugify(name)
+    # Use last 4 digits of phone or first 8 chars of email hash for uniqueness
+    if "@" in identifier:
+        suffix = hashlib.md5(identifier.lower().encode()).hexdigest()[:8]
+    else:
+        digits = re.sub(r"\D", "", identifier)
+        suffix = digits[-4:] if len(digits) >= 4 else digits
+    return f"{slug}-{suffix}"
 
 
 def main():
@@ -259,7 +408,7 @@ def main():
     print(f"Exporting {len(top_contacts)} contacts...")
     contacts_export = []
     for i, contact in enumerate(top_contacts):
-        filename = safe_filename(contact["identifier"])
+        filename = safe_filename(contact["name"], contact["identifier"])
         contacts_export.append({
             "rank": i + 1,
             "name": contact["name"],
@@ -272,10 +421,17 @@ def main():
             "last_date": contact["last_date"],
         })
 
-        # Export monthly data
-        monthly = get_monthly_messages(cursor, contact["handle_rowids"])
+        # Export detailed contact data
+        handle_ids = contact["handle_rowids"]
+        contact_data = {
+            "name": contact["name"],
+            "monthly": get_monthly_messages(cursor, handle_ids),
+            "time_heatmap": get_time_heatmap(cursor, handle_ids),
+            "attachments": get_attachments(cursor, handle_ids),
+            "response_stats": get_response_stats(cursor, handle_ids),
+        }
         with open(messages_dir / f"{filename}.json", "w") as f:
-            json.dump({"name": contact["name"], "monthly": monthly}, f)
+            json.dump(contact_data, f)
 
     with open(output_dir / "contacts.json", "w") as f:
         json.dump(contacts_export, f, indent=2)

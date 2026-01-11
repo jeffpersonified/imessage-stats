@@ -3,6 +3,9 @@ set -e
 
 cd "$(dirname "$0")/.."
 
+# Clear old data to ensure fresh export
+rm -rf web/data
+
 # Export the data
 echo "Exporting your iMessage data..."
 python3 export.py "$@"
