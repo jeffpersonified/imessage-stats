@@ -2537,9 +2537,12 @@ async function takeScreenshot() {
   const originalOverflow = content.style.overflow;
   const originalHeight = content.style.height;
 
+  // Get the full scrollable height before changing styles
+  const fullHeight = content.scrollHeight;
+
   // Expand to full content height for full-page capture
   content.style.overflow = "visible";
-  content.style.height = "auto";
+  content.style.height = fullHeight + "px";
 
   try {
     const canvas = await html2canvas(content, {
