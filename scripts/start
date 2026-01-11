@@ -3,16 +3,27 @@ set -e
 
 cd "$(dirname "$0")/.."
 
+# Check for --fake flag
+FAKE_MODE=""
+EXPORT_ARGS=()
+for arg in "$@"; do
+  if [ "$arg" = "--fake" ]; then
+    FAKE_MODE="?fake=1"
+  else
+    EXPORT_ARGS+=("$arg")
+  fi
+done
+
 # Clear old data to ensure fresh export
-rm -rf web/data
+rm -rf web/data && mkdir -p web/data && touch web/data/.gitkeep
 
 # Export the data
 echo "Exporting your iMessage data..."
-python3 export.py "$@"
+python3 export.py "${EXPORT_ARGS[@]}"
 
 # Open browser (do this before starting server so it's ready when page loads)
 echo "Opening browser..."
-open "http://localhost:8080"
+open "http://localhost:8080${FAKE_MODE}"
 
 # Start the server (this blocks until Ctrl+C)
 echo "Starting server at http://localhost:8080 (Ctrl+C to stop)"

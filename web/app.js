@@ -5,6 +5,17 @@ let currentContactData = null;
 let currentView = 'month';
 let currentFirstName = '';
 
+// Fake names for screenshots (use with ./scripts/start --fake)
+const FAKE_MODE = new URLSearchParams(window.location.search).has('fake');
+const fakeNames = [
+  'Emma Rodriguez', 'Liam Chen', 'Olivia Patel', 'Noah Kim', 'Ava Thompson',
+  'Ethan Nakamura', 'Sophia Williams', 'Mason Garcia', 'Isabella Jones', 'Lucas Brown',
+  'Mia Anderson', 'Oliver Davis', 'Charlotte Wilson', 'Elijah Martinez', 'Amelia Taylor',
+  'James Moore', 'Harper Jackson', 'Benjamin White', 'Evelyn Harris', 'Alexander Clark',
+  'Abigail Lewis', 'William Robinson', 'Emily Walker', 'Henry Young', 'Elizabeth Hall',
+  'Sebastian Allen', 'Sofia King', 'Jack Wright', 'Avery Scott', 'Daniel Green'
+];
+
 // Register custom tooltip positioner that keeps tooltip at fixed vertical position
 Chart.Tooltip.positioners.fixedTop = function(elements, eventPosition) {
   if (!elements.length) return false;
@@ -557,6 +568,14 @@ async function init() {
   try {
     const response = await fetch('data/contacts.json');
     contacts = await response.json();
+
+    // Apply fake names for screenshots
+    if (FAKE_MODE) {
+      contacts.forEach((c, i) => {
+        if (fakeNames[i]) c.name = fakeNames[i];
+      });
+    }
+
     renderContacts();
 
     // Restore selection from URL hash
