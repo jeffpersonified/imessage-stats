@@ -9,605 +9,21 @@ Usage:
 """
 
 import argparse
-import hashlib
 import json
 import os
-import re
 import sqlite3
+import time
 from collections import defaultdict
-from datetime import datetime, timedelta
-from glob import glob
 from pathlib import Path
 
-APPLE_EPOCH = datetime(2001, 1, 1)
-
-
-def normalize_phone(phone):
-    """Normalize phone number for matching.
-
-    Preserves country code to avoid international number collisions.
-    For numbers with 11+ digits starting with country code, keeps the full number.
-    For 10-digit numbers (US/Canada without country code), keeps as-is.
-    """
-    if not phone:
-        return ""
-    digits = re.sub(r"\D", "", phone)
-    if len(digits) == 11 and digits.startswith("1"):
-        # US/Canada with country code - normalize to 10 digits
-        return digits[1:]
-    if len(digits) == 10:
-        # US/Canada without country code
-        return digits
-    # International or other formats - keep full digits to avoid collisions
-    return digits
-
-
-def convert_timestamp(ts):
-    """Convert Apple's nanosecond timestamp to datetime."""
-    if ts is None or ts == 0:
-        return None
-    try:
-        return APPLE_EPOCH + timedelta(seconds=ts / 1e9)
-    except (ValueError, OverflowError):
-        return None
-
-
-def load_contacts(contacts_dir):
-    """Load contact name and ID mappings from AddressBook databases.
-
-    Returns mappings from phone/email to (name, contact_id) tuples.
-    The contact_id is used to correctly group identifiers belonging to the
-    same contact, avoiding incorrect merges when different people share names.
-    """
-    phone_to_contact = {}  # normalized_phone -> (name, contact_id)
-    email_to_contact = {}  # email -> (name, contact_id)
-
-    db_files = glob(os.path.join(contacts_dir, "*/AddressBook-v22.abcddb"))
-    if not db_files:
-        print(f"Warning: No AddressBook databases found in {contacts_dir}")
-        return phone_to_contact, email_to_contact
-
-    for db_path in db_files:
-        try:
-            uri = f"file:{db_path}?mode=ro"
-            conn = sqlite3.connect(uri, uri=True)
-            cursor = conn.cursor()
-
-            # Phone numbers - include Z_PK as unique contact identifier
-            cursor.execute("""
-                SELECT r.Z_PK, r.ZFIRSTNAME, r.ZLASTNAME, r.ZORGANIZATION, r.ZNICKNAME, p.ZFULLNUMBER
-                FROM ZABCDRECORD r
-                JOIN ZABCDPHONENUMBER p ON p.ZOWNER = r.Z_PK
-                WHERE p.ZFULLNUMBER IS NOT NULL
-            """)
-            for contact_id, first, last, org, nick, phone in cursor.fetchall():
-                name = " ".join(p for p in [first, last] if p) or nick or org
-                if name:
-                    normalized = normalize_phone(phone)
-                    if normalized and normalized not in phone_to_contact:
-                        phone_to_contact[normalized] = (name, f"{db_path}:{contact_id}")
-
-            # Emails - include Z_PK as unique contact identifier
-            cursor.execute("""
-                SELECT r.Z_PK, r.ZFIRSTNAME, r.ZLASTNAME, r.ZORGANIZATION, r.ZNICKNAME, e.ZADDRESS
-                FROM ZABCDRECORD r
-                JOIN ZABCDEMAILADDRESS e ON e.ZOWNER = r.Z_PK
-                WHERE e.ZADDRESS IS NOT NULL
-            """)
-            for contact_id, first, last, org, nick, email in cursor.fetchall():
-                name = " ".join(p for p in [first, last] if p) or nick or org
-                if name and email.lower() not in email_to_contact:
-                    email_to_contact[email.lower()] = (name, f"{db_path}:{contact_id}")
-
-            conn.close()
-        except Exception as e:
-            print(f"Warning: Could not read {db_path}: {e}")
-
-    return phone_to_contact, email_to_contact
-
-
-def lookup_contact(identifier, phone_to_contact, email_to_contact):
-    """Look up contact info (name, contact_id) from phone or email.
-
-    Returns (name, contact_id) tuple or (None, None) if not found.
-    """
-    if not identifier:
-        return None, None
-    if "@" in identifier:
-        return email_to_contact.get(identifier.lower(), (None, None))
-    return phone_to_contact.get(normalize_phone(identifier), (None, None))
-
-
-def get_monthly_messages(cursor, handle_ids):
-    """Get monthly message counts for a set of handle IDs.
-
-    Uses local time for consistent month boundaries with user's timezone.
-    """
-    if not handle_ids:
-        return []
-
-    placeholders = ",".join("?" * len(handle_ids))
-    # Use SQLite to compute year-month in local time for consistency
-    cursor.execute(f"""
-        SELECT
-            strftime('%Y-%m', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as month,
-            m.is_from_me
-        FROM message m
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
-        WHERE chj.handle_id IN ({placeholders}) AND c.style = 45
-    """, handle_ids)
-
-    monthly = defaultdict(lambda: {"sent": 0, "received": 0})
-    for month, is_from_me in cursor.fetchall():
-        if month:
-            if is_from_me:
-                monthly[month]["sent"] += 1
-            else:
-                monthly[month]["received"] += 1
-
-    return [
-        {"month": m, "sent": d["sent"], "received": d["received"]}
-        for m, d in sorted(monthly.items())
-    ]
-
-
-def get_time_heatmap(cursor, handle_ids):
-    """Get message counts by day of week and hour for a heatmap.
-
-    Uses local time for accurate "when you text" visualization.
-    """
-    if not handle_ids:
-        return [[0] * 24 for _ in range(7)]
-
-    placeholders = ",".join("?" * len(handle_ids))
-    cursor.execute(f"""
-        SELECT
-            CAST(strftime('%w', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) AS INTEGER) as day,
-            CAST(strftime('%H', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) AS INTEGER) as hour,
-            COUNT(*) as count
-        FROM message m
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
-        WHERE chj.handle_id IN ({placeholders}) AND c.style = 45
-        GROUP BY day, hour
-    """, handle_ids)
-
-    # Initialize 7x24 grid (days x hours)
-    heatmap = [[0] * 24 for _ in range(7)]
-    for day, hour, count in cursor.fetchall():
-        if day is not None and hour is not None:
-            heatmap[day][hour] = count
-
-    return heatmap
-
-
-def get_attachments(cursor, handle_ids):
-    """Get attachment counts by type."""
-    if not handle_ids:
-        return {
-            "photos_sent": 0, "photos_received": 0,
-            "videos_sent": 0, "videos_received": 0,
-            "audio_sent": 0, "audio_received": 0,
-            "gifs_sent": 0, "gifs_received": 0,
-        }
-
-    placeholders = ",".join("?" * len(handle_ids))
-    cursor.execute(f"""
-        SELECT
-            a.mime_type,
-            m.is_from_me,
-            COUNT(*) as count
-        FROM attachment a
-        JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
-        JOIN message m ON maj.message_id = m.ROWID
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
-        WHERE chj.handle_id IN ({placeholders}) AND c.style = 45
-        GROUP BY a.mime_type, m.is_from_me
-    """, handle_ids)
-
-    attachments = {
-        "photos_sent": 0, "photos_received": 0,
-        "videos_sent": 0, "videos_received": 0,
-        "audio_sent": 0, "audio_received": 0,
-        "gifs_sent": 0, "gifs_received": 0,
-    }
-
-    for mime_type, is_from_me, count in cursor.fetchall():
-        if not mime_type:
-            continue
-        direction = "sent" if is_from_me else "received"
-        if mime_type.startswith("image/gif"):
-            attachments[f"gifs_{direction}"] += count
-        elif mime_type.startswith("image/"):
-            attachments[f"photos_{direction}"] += count
-        elif mime_type.startswith("video/"):
-            attachments[f"videos_{direction}"] += count
-        elif mime_type.startswith("audio/"):
-            attachments[f"audio_{direction}"] += count
-
-    return attachments
-
-
-def get_response_stats(cursor, handle_ids):
-    """Calculate average response times and conversation starter percentage."""
-    if not handle_ids:
-        return {"you_avg_seconds": None, "them_avg_seconds": None, "you_start_pct": None}
-
-    placeholders = ",".join("?" * len(handle_ids))
-
-    # Get all messages ordered by date
-    cursor.execute(f"""
-        SELECT m.date, m.is_from_me
-        FROM message m
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
-        WHERE chj.handle_id IN ({placeholders}) AND c.style = 45
-        ORDER BY m.date
-    """, handle_ids)
-
-    messages = [(ts, is_from_me) for ts, is_from_me in cursor.fetchall() if ts]
-
-    if len(messages) < 2:
-        return {"you_avg_seconds": None, "them_avg_seconds": None, "you_start_pct": None}
-
-    # Calculate response times and conversation starters
-    CONVERSATION_GAP = 4 * 60 * 60 * 1e9  # 4 hours in nanoseconds
-    RESPONSE_MAX = 60 * 60 * 1e9  # Only count responses within 1 hour as actual responses
-
-    your_response_times = []
-    their_response_times = []
-    conversations_you_started = 0
-    conversations_they_started = 0
-
-    # The first message starts the first conversation
-    prev_ts, prev_from_me = messages[0]
-    if prev_from_me:
-        conversations_you_started += 1
-    else:
-        conversations_they_started += 1
-
-    for ts, is_from_me in messages[1:]:
-        gap = ts - prev_ts
-
-        # Check if this is a new conversation
-        if gap > CONVERSATION_GAP:
-            if is_from_me:
-                conversations_you_started += 1
-            else:
-                conversations_they_started += 1
-        # Otherwise, check if this is a response
-        elif is_from_me != prev_from_me and gap < RESPONSE_MAX:
-            response_seconds = gap / 1e9
-            if is_from_me:
-                your_response_times.append(response_seconds)
-            else:
-                their_response_times.append(response_seconds)
-
-        prev_ts, prev_from_me = ts, is_from_me
-
-    # Calculate averages
-    you_avg = sum(your_response_times) / len(your_response_times) if your_response_times else None
-    them_avg = sum(their_response_times) / len(their_response_times) if their_response_times else None
-
-    total_convos = conversations_you_started + conversations_they_started
-    you_start_pct = conversations_you_started / total_convos if total_convos > 0 else None
-
-    return {
-        "you_avg_seconds": round(you_avg) if you_avg else None,
-        "them_avg_seconds": round(them_avg) if them_avg else None,
-        "you_start_pct": round(you_start_pct, 2) if you_start_pct is not None else None
-    }
-
-
-def get_global_stats(cursor):
-    """Get total message counts across all 1-on-1 conversations."""
-    cursor.execute("""
-        SELECT
-            SUM(CASE WHEN m.is_from_me = 1 THEN 1 ELSE 0 END) as total_sent,
-            SUM(CASE WHEN m.is_from_me = 0 THEN 1 ELSE 0 END) as total_received,
-            MIN(m.date) as first_msg,
-            MAX(m.date) as last_msg
-        FROM message m
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        WHERE c.style = 45
-    """)
-    row = cursor.fetchone()
-    if not row:
-        return {"total_sent": 0, "total_received": 0, "first_date": None, "last_date": None}
-
-    first_dt = convert_timestamp(row[2])
-    last_dt = convert_timestamp(row[3])
-    return {
-        "total_sent": row[0] or 0,
-        "total_received": row[1] or 0,
-        "first_date": first_dt.strftime("%Y-%m-%d") if first_dt else None,
-        "last_date": last_dt.strftime("%Y-%m-%d") if last_dt else None,
-    }
-
-
-def get_global_monthly(cursor):
-    """Get monthly message counts across all 1-on-1 conversations."""
-    cursor.execute("""
-        SELECT
-            strftime('%Y-%m', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as month,
-            SUM(CASE WHEN m.is_from_me = 1 THEN 1 ELSE 0 END) as sent,
-            SUM(CASE WHEN m.is_from_me = 0 THEN 1 ELSE 0 END) as received
-        FROM message m
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        WHERE c.style = 45
-        GROUP BY month
-        ORDER BY month
-    """)
-    return [
-        {"month": month, "sent": sent, "received": received}
-        for month, sent, received in cursor.fetchall()
-        if month
-    ]
-
-
-def get_global_heatmap(cursor):
-    """Get message counts by day of week and hour across all 1-on-1 conversations."""
-    cursor.execute("""
-        SELECT
-            CAST(strftime('%w', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) AS INTEGER) as day,
-            CAST(strftime('%H', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) AS INTEGER) as hour,
-            COUNT(*) as count
-        FROM message m
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        WHERE c.style = 45
-        GROUP BY day, hour
-    """)
-    heatmap = [[0] * 24 for _ in range(7)]
-    for day, hour, count in cursor.fetchall():
-        if day is not None and hour is not None:
-            heatmap[day][hour] = count
-    return heatmap
-
-
-def get_global_attachments(cursor):
-    """Get attachment counts by type across all 1-on-1 conversations."""
-    cursor.execute("""
-        SELECT
-            a.mime_type,
-            m.is_from_me,
-            COUNT(*) as count
-        FROM attachment a
-        JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
-        JOIN message m ON maj.message_id = m.ROWID
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        WHERE c.style = 45
-        GROUP BY a.mime_type, m.is_from_me
-    """)
-
-    attachments = {
-        "photos_sent": 0, "photos_received": 0,
-        "videos_sent": 0, "videos_received": 0,
-        "audio_sent": 0, "audio_received": 0,
-        "gifs_sent": 0, "gifs_received": 0,
-    }
-
-    for mime_type, is_from_me, count in cursor.fetchall():
-        if not mime_type:
-            continue
-        direction = "sent" if is_from_me else "received"
-        if mime_type.startswith("image/gif"):
-            attachments[f"gifs_{direction}"] += count
-        elif mime_type.startswith("image/"):
-            attachments[f"photos_{direction}"] += count
-        elif mime_type.startswith("video/"):
-            attachments[f"videos_{direction}"] += count
-        elif mime_type.startswith("audio/"):
-            attachments[f"audio_{direction}"] += count
-
-    return attachments
-
-
-def get_yearly_top_identifiers(cursor, top_n=8):
-    """Get identifiers that appear in any year's top N by message count.
-
-    Returns a set of identifiers that should be exported even if not in the
-    overall top contacts, so they can appear in yearly top contact lists.
-    """
-    cursor.execute("""
-        WITH yearly_ranked AS (
-            SELECT
-                strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
-                h.id as identifier,
-                COUNT(*) as total,
-                ROW_NUMBER() OVER (
-                    PARTITION BY strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime'))
-                    ORDER BY COUNT(*) DESC
-                ) as rank
-            FROM message m
-            JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-            JOIN chat c ON cmj.chat_id = c.ROWID
-            JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
-            JOIN handle h ON chj.handle_id = h.ROWID
-            WHERE c.style = 45
-            GROUP BY year, h.id
-        )
-        SELECT DISTINCT identifier
-        FROM yearly_ranked
-        WHERE rank <= ? AND year IS NOT NULL
-    """, (top_n,))
-    return set(row[0] for row in cursor.fetchall())
-
-
-def get_yearly_data(cursor, global_monthly, contacts_export):
-    """Get per-year statistics including top contacts and busiest month."""
-    # Build a lookup from identifier to contact export data
-    contact_by_identifier = {}
-    for c in contacts_export:
-        contact_by_identifier[c["identifier"]] = c
-
-    # Query yearly message counts per identifier
-    cursor.execute("""
-        SELECT
-            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
-            h.id as identifier,
-            SUM(CASE WHEN m.is_from_me = 1 THEN 1 ELSE 0 END) as sent,
-            SUM(CASE WHEN m.is_from_me = 0 THEN 1 ELSE 0 END) as received
-        FROM message m
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
-        JOIN handle h ON chj.handle_id = h.ROWID
-        WHERE c.style = 45
-        GROUP BY year, h.id
-    """)
-
-    # Group by year
-    yearly_contacts = defaultdict(list)
-    for year, identifier, sent, received in cursor.fetchall():
-        if year:
-            yearly_contacts[year].append({
-                "identifier": identifier,
-                "sent": sent,
-                "received": received,
-                "total": sent + received,
-            })
-
-    # Query yearly heatmaps
-    cursor.execute("""
-        SELECT
-            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
-            CAST(strftime('%w', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) AS INTEGER) as day,
-            CAST(strftime('%H', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) AS INTEGER) as hour,
-            COUNT(*) as count
-        FROM message m
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        WHERE c.style = 45
-        GROUP BY year, day, hour
-    """)
-
-    yearly_heatmaps = defaultdict(lambda: [[0] * 24 for _ in range(7)])
-    for year, day, hour, count in cursor.fetchall():
-        if year and day is not None and hour is not None:
-            yearly_heatmaps[year][day][hour] = count
-
-    # Query yearly attachments
-    cursor.execute("""
-        SELECT
-            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
-            a.mime_type,
-            m.is_from_me,
-            COUNT(*) as count
-        FROM attachment a
-        JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
-        JOIN message m ON maj.message_id = m.ROWID
-        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
-        JOIN chat c ON cmj.chat_id = c.ROWID
-        WHERE c.style = 45
-        GROUP BY year, a.mime_type, m.is_from_me
-    """)
-
-    yearly_attachments = defaultdict(lambda: {
-        "photos_sent": 0, "photos_received": 0,
-        "videos_sent": 0, "videos_received": 0,
-        "audio_sent": 0, "audio_received": 0,
-        "gifs_sent": 0, "gifs_received": 0,
-    })
-    for year, mime_type, is_from_me, count in cursor.fetchall():
-        if not year or not mime_type:
-            continue
-        direction = "sent" if is_from_me else "received"
-        if mime_type.startswith("image/gif"):
-            yearly_attachments[year][f"gifs_{direction}"] += count
-        elif mime_type.startswith("image/"):
-            yearly_attachments[year][f"photos_{direction}"] += count
-        elif mime_type.startswith("video/"):
-            yearly_attachments[year][f"videos_{direction}"] += count
-        elif mime_type.startswith("audio/"):
-            yearly_attachments[year][f"audio_{direction}"] += count
-
-    # Group global monthly by year
-    monthly_by_year = defaultdict(list)
-    for m in global_monthly:
-        year = m["month"][:4]
-        monthly_by_year[year].append(m)
-
-    # Build yearly data
-    by_year = {}
-    for year in sorted(yearly_contacts.keys(), reverse=True):
-        # Get top 8 contacts that exist in our export
-        contacts_for_year = yearly_contacts[year]
-        contacts_for_year.sort(key=lambda x: x["total"], reverse=True)
-
-        top_contacts = []
-        for c in contacts_for_year:
-            if len(top_contacts) >= 8:
-                break
-            # Check if this identifier is in our exported contacts
-            exported = contact_by_identifier.get(c["identifier"])
-            if exported:
-                top_contacts.append({
-                    "rank": len(top_contacts) + 1,
-                    "name": exported["name"],
-                    "filename": exported["filename"],
-                    "total": c["total"],
-                    "sent": c["sent"],
-                    "received": c["received"],
-                })
-
-        # Calculate yearly totals
-        year_monthly = monthly_by_year.get(year, [])
-        year_sent = sum(m["sent"] for m in year_monthly)
-        year_received = sum(m["received"] for m in year_monthly)
-
-        # Find busiest month
-        busiest_month = None
-        if year_monthly:
-            busiest = max(year_monthly, key=lambda m: m["sent"] + m["received"])
-            busiest_month = {
-                "month": busiest["month"],
-                "total": busiest["sent"] + busiest["received"],
-            }
-
-        by_year[year] = {
-            "sent": year_sent,
-            "received": year_received,
-            "monthly": year_monthly,
-            "time_heatmap": yearly_heatmaps[year],
-            "attachments": yearly_attachments[year],
-            "top_contacts": top_contacts,
-            "busiest_month": busiest_month,
-        }
-
-    return by_year
-
-
-def slugify(text):
-    """Convert text to URL-friendly slug."""
-    # Lowercase and replace spaces with hyphens
-    slug = text.lower().strip().replace(" ", "-")
-    # Remove non-alphanumeric characters except hyphens
-    slug = re.sub(r"[^a-z0-9\-]", "", slug)
-    # Collapse multiple hyphens
-    slug = re.sub(r"-+", "-", slug)
-    return slug.strip("-")
-
-
-def safe_filename(name, identifier):
-    """Create a safe filename from contact name and identifier."""
-    slug = slugify(name)
-    # Use last 4 digits of phone or first 8 chars of email hash for uniqueness
-    if "@" in identifier:
-        suffix = hashlib.md5(identifier.lower().encode()).hexdigest()[:8]
-    else:
-        digits = re.sub(r"\D", "", identifier)
-        suffix = digits[-4:] if len(digits) >= 4 else digits
-    return f"{slug}-{suffix}"
+from utils import format_duration, print_progress, convert_timestamp, safe_filename
+from contacts import load_contacts, lookup_contact
+from queries import (
+    get_monthly_messages, get_time_heatmap, get_attachments, get_attachments_by_year,
+    get_heatmap_by_year, get_response_stats, get_global_stats, get_global_monthly,
+    get_global_heatmap, get_global_attachments, get_global_links, get_yearly_links,
+    get_yearly_top_identifiers, get_yearly_data,
+)
 
 
 def main():
@@ -615,6 +31,14 @@ def main():
         description="Export iMessage statistics for visualization"
     )
     project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    # Load .env file if python-dotenv is available
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(project_dir, ".env"))
+    except ImportError:
+        pass  # dotenv not installed, use existing environment variables
+
     parser.add_argument(
         "--db",
         default=os.path.join(project_dir, "chat.db"),
@@ -628,13 +52,30 @@ def main():
     parser.add_argument(
         "--limit",
         type=int,
-        default=100,
-        help="Number of top contacts to export (default: 100)",
+        default=24,
+        help="Number of top contacts to export (default: 24)",
     )
     parser.add_argument(
         "--output",
         default=os.path.join(project_dir, "web", "data"),
         help="Output directory (default: web/data)",
+    )
+    parser.add_argument(
+        "--analyze",
+        action="store_true",
+        help="Enable AI-powered theme analysis (requires ANTHROPIC_API_KEY)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Number of parallel workers for analysis (default: CPU count)",
+    )
+    parser.add_argument(
+        "--llm-sample-size",
+        type=int,
+        default=1000,
+        help="Max messages to sample per contact for LLM analysis (default: 1000)",
     )
     args = parser.parse_args()
 
@@ -672,17 +113,20 @@ def main():
         print(f"Unexpected error: {e}")
         return 1
 
-    print("Loading contacts...")
+    print("\nLoading contacts...")
+    start_time = time.time()
     if os.path.isdir(args.contacts):
         phone_to_contact, email_to_contact = load_contacts(args.contacts)
-        print(f"  Found {len(phone_to_contact)} phone and {len(email_to_contact)} email mappings")
+        elapsed = format_duration(time.time() - start_time)
+        print(f"  Found {len(phone_to_contact)} phone and {len(email_to_contact)} email mappings ({elapsed})")
     else:
         print("  Sources/ directory not found - names won't be matched")
         print("  To fix: Finder > Cmd+Shift+G > ~/Library/Application Support/AddressBook")
         print("         Copy the Sources folder to this project directory")
         phone_to_contact, email_to_contact = {}, {}
 
-    print("Querying iMessage database...")
+    print("\nQuerying iMessage database...")
+    start_time = time.time()
     uri = f"file:{args.db}?mode=ro"
     conn = sqlite3.connect(uri, uri=True)
     cursor = conn.cursor()
@@ -709,10 +153,11 @@ def main():
     """)
 
     results = cursor.fetchall()
-    print(f"  Found {len(results)} handles")
+    elapsed = format_duration(time.time() - start_time)
+    print(f"  Found {len(results)} unique conversations ({elapsed})")
 
     # Group by contact_id (not name!) to avoid merging different people with same name
-    print("Processing contacts...")
+    print("\nMatching conversations to contacts...")
     contacts_by_id = defaultdict(list)
 
     for handle_rowid, identifier, sent, received, first_ts, last_ts in results:
@@ -776,15 +221,44 @@ def main():
     messages_dir.mkdir(parents=True, exist_ok=True)
 
     # Export contacts.json
-    print(f"Exporting {len(top_contacts)} contacts...")
+    total_to_export = len(top_contacts) + len(additional_contacts)
+    print(f"\nExporting {len(top_contacts)} contacts...")
     if additional_contacts:
         print(f"  Plus {len(additional_contacts)} additional contacts for yearly top 8")
 
     contacts_export = []
 
-    # Export top contacts (appear in sidebar)
+    # Always import local analyzers (fast, free, no API needed)
+    from analyzers.base import get_messages_with_text
+    from analyzers import run_analyzers_parallel
+
+    # Local analyzers that always run
+    analyzer_names = ["temperature", "links", "profanity"]
+
+    # LLM theme analysis requires --analyze flag AND API key
+    args.use_llm_themes = False
+    if args.analyze:
+        from analyzers.llm_themes import run_llm_themes_parallel
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            print("  Warning: ANTHROPIC_API_KEY not set, theme analysis will be skipped")
+        else:
+            args.use_llm_themes = True
+            print(f"  Theme analysis enabled ({args.llm_sample_size} messages sampled per contact)")
+
+    export_start_time = time.time()
+    total_messages_processed = 0
+
+    # Combine all contacts for unified processing
+    all_contacts = []
     for i, contact in enumerate(top_contacts):
         filename = safe_filename(contact["name"], contact["identifier"])
+        all_contacts.append({
+            **contact,
+            "filename": filename,
+            "rank": i + 1,
+            "sidebar": True,
+            "allow_llm": True,
+        })
         contacts_export.append({
             "rank": i + 1,
             "name": contact["name"],
@@ -797,21 +271,15 @@ def main():
             "last_date": contact["last_date"],
         })
 
-        # Export detailed contact data
-        handle_ids = contact["handle_rowids"]
-        contact_data = {
-            "name": contact["name"],
-            "monthly": get_monthly_messages(cursor, handle_ids),
-            "time_heatmap": get_time_heatmap(cursor, handle_ids),
-            "attachments": get_attachments(cursor, handle_ids),
-            "response_stats": get_response_stats(cursor, handle_ids),
-        }
-        with open(messages_dir / f"{filename}.json", "w") as f:
-            json.dump(contact_data, f)
-
-    # Export additional contacts (don't appear in sidebar, only accessible via yearly top 8)
     for contact in additional_contacts:
         filename = safe_filename(contact["name"], contact["identifier"])
+        all_contacts.append({
+            **contact,
+            "filename": filename,
+            "rank": None,
+            "sidebar": False,
+            "allow_llm": False,
+        })
         contacts_export.append({
             "name": contact["name"],
             "identifier": contact["identifier"],
@@ -821,33 +289,126 @@ def main():
             "total": contact["total"],
             "first_date": contact["first_date"],
             "last_date": contact["last_date"],
-            "sidebar": False,  # Don't show in sidebar
+            "sidebar": False,
         })
 
-        # Export detailed contact data
+    # Phase 1: Gather all contact data (sequential DB access)
+    print("  Gathering message data...")
+    contact_data_list = []
+    contacts_messages = []  # For parallel analysis
+    llm_contacts_to_analyze = []  # For parallel LLM analysis
+
+    for i, contact in enumerate(all_contacts):
+        print_progress(i + 1, len(all_contacts))
         handle_ids = contact["handle_rowids"]
+
         contact_data = {
             "name": contact["name"],
             "monthly": get_monthly_messages(cursor, handle_ids),
             "time_heatmap": get_time_heatmap(cursor, handle_ids),
+            "heatmap_by_year": get_heatmap_by_year(cursor, handle_ids),
             "attachments": get_attachments(cursor, handle_ids),
+            "attachments_by_year": get_attachments_by_year(cursor, handle_ids),
             "response_stats": get_response_stats(cursor, handle_ids),
         }
-        with open(messages_dir / f"{filename}.json", "w") as f:
+
+        # Fetch messages for analysis (always needed for local analyzers)
+        messages = get_messages_with_text(cursor, handle_ids)
+        total_messages_processed += len(messages)
+
+        contact_data_list.append({
+            "contact": contact,
+            "data": contact_data,
+            "messages": messages,
+        })
+
+        # Collect messages for parallel analysis (local analyzers always run)
+        if messages:
+            contacts_messages.append((i, messages))
+
+        # Collect for LLM theme analysis (only if --analyze flag passed)
+        if getattr(args, 'use_llm_themes', False) and messages:
+            contact_info = {
+                "name": contact["name"],
+                "sent": contact["sent"],
+                "received": contact["received"],
+                "first_date": contact["first_date"],
+                "last_date": contact["last_date"],
+            }
+            llm_contacts_to_analyze.append((i, contact_info, messages))
+
+    # Phase 2: Run local analyzers in parallel (always runs - fast and free)
+    analysis_results = {}
+    if contacts_messages:
+        worker_count = args.workers or os.cpu_count() or 4
+        print("\n  Running text analysis...")
+        analysis_start = time.time()
+
+        def analysis_progress(completed, total):
+            print_progress(completed, total)
+
+        analysis_results = run_analyzers_parallel(
+            contacts_messages, analyzer_names,
+            max_workers=worker_count,
+            progress_callback=analysis_progress
+        )
+        analysis_elapsed = format_duration(time.time() - analysis_start)
+        print(f"  Text analysis complete ({analysis_elapsed})")
+
+    # Phase 3: Write JSON files with local analysis results (before LLM)
+    # This allows the server to start while LLM analysis runs in background
+    print("\n  Writing contact files...")
+    for i, item in enumerate(contact_data_list):
+        print_progress(i + 1, len(contact_data_list))
+        contact = item["contact"]
+        contact_data = item["data"]
+
+        # Add analysis results (local analyzers always run)
+        if i in analysis_results:
+            contact_data["analysis"] = analysis_results[i]
+        else:
+            contact_data["analysis"] = {}
+
+        with open(messages_dir / f"{contact['filename']}.json", "w") as f:
             json.dump(contact_data, f)
+
+    export_elapsed = format_duration(time.time() - export_start_time)
+    print(f"  Analyzed {total_messages_processed:,} messages across {total_to_export} contacts ({export_elapsed})")
 
     with open(output_dir / "contacts.json", "w") as f:
         json.dump(contacts_export, f, indent=2)
 
     # Export global "Everyone" statistics
-    print("Exporting global statistics...")
+    print("\nComputing global statistics...")
+    global_start_time = time.time()
+    print("  Aggregating message totals...")
     global_stats = get_global_stats(cursor)
     global_monthly = get_global_monthly(cursor)
+    print("  Building time heatmap...")
     global_heatmap = get_global_heatmap(cursor)
+    print("  Counting attachments...")
     global_attachments = get_global_attachments(cursor)
-    yearly_data = get_yearly_data(cursor, global_monthly, contacts_export)
+    print("  Extracting link statistics...")
+    global_links = get_global_links(cursor)
+    yearly_links = get_yearly_links(cursor)
+    print("  Computing per-year breakdowns...")
+    yearly_data = get_yearly_data(cursor, global_monthly, contacts_export, yearly_links)
+    global_elapsed = format_duration(time.time() - global_start_time)
+    print(f"  Done ({global_elapsed})")
 
     years = sorted(yearly_data.keys(), reverse=True)
+
+    # Build all-time top 8 contacts
+    all_time_top_contacts = []
+    for c in contacts_export[:8]:
+        all_time_top_contacts.append({
+            "rank": len(all_time_top_contacts) + 1,
+            "name": c["name"],
+            "filename": c["filename"],
+            "total": c["total"],
+            "sent": c["sent"],
+            "received": c["received"],
+        })
 
     everyone_data = {
         "total_sent": global_stats["total_sent"],
@@ -858,7 +419,9 @@ def main():
         "monthly": global_monthly,
         "time_heatmap": global_heatmap,
         "attachments": global_attachments,
+        "links": global_links,
         "by_year": yearly_data,
+        "top_contacts": all_time_top_contacts,
     }
 
     with open(output_dir / "everyone.json", "w") as f:
@@ -868,7 +431,88 @@ def main():
 
     total_messages = global_stats["total_sent"] + global_stats["total_received"]
     total_exported = len(top_contacts) + len(additional_contacts)
-    print(f"\nDone! Exported {total_exported} contacts and global stats ({total_messages:,} total messages) to {output_dir}")
+    print(f"\nExport complete!")
+    print(f"  {total_exported} contacts exported")
+    print(f"  {total_messages:,} total messages")
+
+    # Phase 4: Run LLM theme analysis in background (if enabled)
+    # This runs after the server starts, updating files incrementally
+    filename_by_index = None
+    status = None
+    if getattr(args, 'use_llm_themes', False) and llm_contacts_to_analyze:
+        # Build filename lookup for updating JSON files
+        filename_by_index = {i: item["contact"]["filename"] for i, item in enumerate(contact_data_list)}
+
+        # Write initial status file BEFORE _ready so browser sees it on load
+        pending_filenames = [filename_by_index[i] for i, _, _ in llm_contacts_to_analyze]
+        status = {
+            "pending": pending_filenames,
+            "completed": [],
+            "total": len(pending_filenames),
+        }
+        with open(output_dir / "_llm_status.json", "w") as f:
+            json.dump(status, f)
+
+    # Signal that initial export is done - server can start now
+    # Write a marker file that scripts/start watches for
+    with open(output_dir / "_ready", "w") as f:
+        f.write("ready")
+    print("Ready for server...")
+
+    # Continue with LLM analysis if enabled
+    if getattr(args, 'use_llm_themes', False) and llm_contacts_to_analyze:
+        print("\n  Extracting conversation themes (server is running)...")
+        llm_start = time.time()
+
+        def llm_progress(completed, total, contact_name):
+            print_progress(completed, total)
+
+        def on_llm_result(contact_index, llm_themes):
+            """Update contact JSON and status file when LLM results are ready."""
+            filename = filename_by_index[contact_index]
+            filepath = messages_dir / f"{filename}.json"
+
+            # Read existing contact data
+            with open(filepath, "r") as f:
+                contact_data = json.load(f)
+
+            # Add LLM themes
+            if "analysis" not in contact_data:
+                contact_data["analysis"] = {}
+            contact_data["analysis"]["llm_themes"] = llm_themes
+
+            # Write updated contact data
+            with open(filepath, "w") as f:
+                json.dump(contact_data, f)
+
+            # Update status file
+            if filename in status["pending"]:
+                status["pending"].remove(filename)
+                status["completed"].append(filename)
+                with open(output_dir / "_llm_status.json", "w") as f:
+                    json.dump(status, f)
+
+        llm_results, llm_skipped = run_llm_themes_parallel(
+            llm_contacts_to_analyze,
+            sample_size=args.llm_sample_size,
+            progress_callback=llm_progress,
+            include_yearly=True,
+            min_yearly_messages=50,
+            on_result_callback=on_llm_result,
+        )
+
+        # Remove status file when complete
+        status_file = output_dir / "_llm_status.json"
+        if status_file.exists():
+            status_file.unlink()
+
+        llm_elapsed = format_duration(time.time() - llm_start)
+        if llm_skipped:
+            print(f"  Theme analysis complete ({len(llm_results)} succeeded, {len(llm_skipped)} skipped, {llm_elapsed})")
+            for contact_name, reason in llm_skipped:
+                print(f"    Skipped {contact_name}: {reason}")
+        else:
+            print(f"  Theme analysis complete ({len(llm_results)} contacts, {llm_elapsed})")
 
 
 if __name__ == "__main__":

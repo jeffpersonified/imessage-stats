@@ -13,20 +13,10 @@ from pathlib import Path
 
 import pytest
 
-from export import (
-    normalize_phone,
-    convert_timestamp,
-    lookup_contact,
-    get_monthly_messages,
-    get_time_heatmap,
-    get_attachments,
-    get_response_stats,
-    load_contacts,
-    slugify,
-    safe_filename,
-    main,
-    APPLE_EPOCH,
-)
+from contacts import normalize_phone, load_contacts, lookup_contact
+from utils import convert_timestamp, slugify, safe_filename, APPLE_EPOCH
+from queries import get_monthly_messages, get_time_heatmap, get_attachments, get_response_stats
+from export import main
 
 
 class TestNormalizePhone:
@@ -195,7 +185,9 @@ def mock_imessage_db():
             ROWID INTEGER PRIMARY KEY,
             handle_id INTEGER,
             date INTEGER,
-            is_from_me INTEGER
+            is_from_me INTEGER,
+            text TEXT,
+            attributedBody BLOB
         );
 
         CREATE TABLE chat_message_join (
@@ -549,6 +541,294 @@ class TestMainValidation:
         )
         result = main()
         assert result == 1
+
+
+# =============================================================================
+# Tests for utils.py
+# =============================================================================
+
+from utils import extract_text_from_attributed_body, format_duration, URL_PATTERN
+
+
+class TestExtractTextFromAttributedBody:
+    """Tests for extracting text from attributedBody blobs."""
+
+    def test_none_blob(self):
+        """None blob returns None."""
+        assert extract_text_from_attributed_body(None) is None
+
+    def test_empty_blob(self):
+        """Empty blob returns None."""
+        assert extract_text_from_attributed_body(b'') is None
+
+    def test_invalid_blob(self):
+        """Invalid blob without marker returns None."""
+        assert extract_text_from_attributed_body(b'random data') is None
+
+
+class TestFormatDuration:
+    """Tests for duration formatting."""
+
+    def test_milliseconds(self):
+        """Sub-second durations show in milliseconds."""
+        assert format_duration(0.5) == "500ms"
+        assert format_duration(0.001) == "1ms"
+        assert format_duration(0.999) == "999ms"
+
+    def test_seconds(self):
+        """Durations under a minute show in seconds."""
+        assert format_duration(1.0) == "1.0s"
+        assert format_duration(30.5) == "30.5s"
+        assert format_duration(59.9) == "59.9s"
+
+    def test_minutes_and_seconds(self):
+        """Durations over a minute show in minutes and seconds."""
+        assert format_duration(60) == "1m 0s"
+        assert format_duration(90) == "1m 30s"
+        assert format_duration(125) == "2m 5s"
+
+
+class TestURLPattern:
+    """Tests for URL extraction pattern."""
+
+    def test_http_url(self):
+        """HTTP URLs are matched."""
+        text = "Check this out: http://example.com/page"
+        urls = URL_PATTERN.findall(text)
+        assert len(urls) == 1
+        assert "example.com" in urls[0]
+
+    def test_https_url(self):
+        """HTTPS URLs are matched."""
+        text = "Secure link: https://example.com/path?query=1"
+        urls = URL_PATTERN.findall(text)
+        assert len(urls) == 1
+        assert "example.com" in urls[0]
+
+    def test_domain_without_protocol(self):
+        """Bare domains with common TLDs are matched."""
+        text = "Visit example.com for more info"
+        urls = URL_PATTERN.findall(text)
+        assert len(urls) == 1
+        assert urls[0] == "example.com"
+
+    def test_multiple_urls(self):
+        """Multiple URLs in text are all matched."""
+        text = "Check https://google.com and https://github.com"
+        urls = URL_PATTERN.findall(text)
+        assert len(urls) == 2
+
+    def test_no_urls(self):
+        """Text without URLs returns empty list."""
+        text = "No links here, just text."
+        urls = URL_PATTERN.findall(text)
+        assert len(urls) == 0
+
+
+# =============================================================================
+# Tests for analyzers
+# =============================================================================
+
+from analyzers.temperature import count_emojis, compute_metrics, analyze_temperature
+from analyzers.links import extract_domain, aggregate_urls, analyze_links
+from analyzers.profanity import count_profanity_in_text
+
+
+class TestCountEmojis:
+    """Tests for emoji counting."""
+
+    def test_no_emojis(self):
+        """Text without emojis returns 0."""
+        assert count_emojis("Hello world") == 0
+
+    def test_single_emoji(self):
+        """Single emoji is counted."""
+        result = count_emojis("Hello 👋")
+        assert result >= 1
+
+    def test_multiple_emojis(self):
+        """Multiple emojis are counted."""
+        # Fallback regex groups consecutive emojis as one match,
+        # so test with separated emojis for consistent behavior
+        result = count_emojis("Great 🎉 job 👏 done 🔥")
+        assert result >= 3
+
+    def test_empty_string(self):
+        """Empty string returns 0."""
+        assert count_emojis("") == 0
+
+
+class TestComputeMetrics:
+    """Tests for temperature metrics computation."""
+
+    def test_empty_list(self):
+        """Empty list returns None."""
+        assert compute_metrics([]) is None
+
+    def test_empty_strings(self):
+        """List of empty strings returns None."""
+        assert compute_metrics([""]) is None
+
+    def test_basic_metrics(self):
+        """Basic messages produce valid metrics."""
+        texts = ["Hello there!", "How are you?", "I'm doing great 😊"]
+        result = compute_metrics(texts)
+        assert result is not None
+        assert "score" in result
+        assert 1.0 <= result["score"] <= 5.0
+        assert "avg_length" in result
+        assert "emoji_density" in result
+        assert "message_count" in result
+        assert result["message_count"] == 3
+
+    def test_high_energy_messages(self):
+        """High-energy messages have higher scores."""
+        low_energy = compute_metrics(["ok", "yes", "no"])
+        high_energy = compute_metrics([
+            "WOW this is AMAZING!!!",
+            "I can't believe it!!! 🎉🎉🎉",
+            "This is the best day ever! 😍😍"
+        ])
+        assert high_energy["score"] > low_energy["score"]
+
+
+class TestAnalyzeTemperature:
+    """Tests for temperature analyzer."""
+
+    def test_empty_messages(self):
+        """Empty message list returns empty dict or None."""
+        result = analyze_temperature([])
+        assert result is None or result == {}
+
+    def test_messages_grouped_by_year(self):
+        """Messages are grouped by year."""
+        messages = [
+            ("Hello!", 1, "2023", "2023-01"),
+            ("Hi there!", 0, "2023", "2023-02"),
+            ("How are you?", 1, "2024", "2024-01"),
+        ]
+        result = analyze_temperature(messages)
+        assert result is not None
+        assert "2023" in result
+        assert "2024" in result
+        assert "all" in result
+
+
+class TestExtractDomain:
+    """Tests for domain extraction."""
+
+    def test_basic_url(self):
+        """Basic HTTP URL extracts domain."""
+        assert extract_domain("http://example.com/path") == "example.com"
+
+    def test_https_url(self):
+        """HTTPS URL extracts domain."""
+        assert extract_domain("https://secure.example.com") == "secure.example.com"
+
+    def test_www_stripped(self):
+        """www. prefix is stripped."""
+        assert extract_domain("https://www.example.com") == "example.com"
+
+    def test_url_without_protocol(self):
+        """URL without protocol still extracts domain."""
+        assert extract_domain("example.com/page") == "example.com"
+
+    def test_twitter_to_x(self):
+        """twitter.com normalizes to x.com."""
+        assert extract_domain("https://twitter.com/user") == "x.com"
+        assert extract_domain("https://m.twitter.com/user") == "x.com"
+
+    def test_youtube_shortlink(self):
+        """youtu.be normalizes to youtube.com."""
+        assert extract_domain("https://youtu.be/abc123") == "youtube.com"
+
+
+class TestAggregateUrls:
+    """Tests for URL aggregation."""
+
+    def test_empty_list(self):
+        """Empty URL list returns zero total."""
+        result = aggregate_urls([])
+        assert result["total"] == 0
+        assert result["top_domains"] == []
+
+    def test_counts_urls(self):
+        """URLs are counted correctly."""
+        urls = [
+            "https://example.com/1",
+            "https://example.com/2",
+            "https://other.com/1",
+        ]
+        result = aggregate_urls(urls)
+        assert result["total"] == 3
+        assert len(result["top_domains"]) == 2
+
+    def test_include_raw_option(self):
+        """include_raw adds urls list to result."""
+        urls = ["https://example.com"]
+        result = aggregate_urls(urls, include_raw=True)
+        assert "urls" in result
+        assert result["urls"] == urls
+
+        result_no_raw = aggregate_urls(urls, include_raw=False)
+        assert "urls" not in result_no_raw
+
+
+class TestAnalyzeLinks:
+    """Tests for link analyzer."""
+
+    def test_empty_messages(self):
+        """Empty message list returns None."""
+        result = analyze_links([])
+        assert result is None
+
+    def test_messages_without_links(self):
+        """Messages without links returns None."""
+        messages = [
+            ("Hello!", 1, "2023", "2023-01"),
+            ("No links here", 0, "2023", "2023-02"),
+        ]
+        result = analyze_links(messages)
+        assert result is None
+
+    def test_messages_with_links(self):
+        """Messages with links are counted correctly."""
+        messages = [
+            ("Check out https://example.com", 1, "2023", "2023-01"),
+            ("Cool site: https://github.com", 0, "2023", "2023-02"),
+        ]
+        result = analyze_links(messages)
+        assert result is not None
+        assert "2023" in result
+        assert "all" in result
+        assert result["all"]["sent"]["total"] == 1
+        assert result["all"]["received"]["total"] == 1
+
+
+class TestCountProfanityInText:
+    """Tests for profanity counting."""
+
+    def test_empty_text(self):
+        """Empty text returns 0."""
+        count, words = count_profanity_in_text("", {"bad"})
+        assert count == 0
+        assert words == {}
+
+    def test_no_profanity(self):
+        """Clean text returns 0."""
+        count, words = count_profanity_in_text("Hello world, nice day!", {"bad", "word"})
+        assert count == 0
+
+    def test_profanity_counted(self):
+        """Profane words are counted."""
+        count, words = count_profanity_in_text("This is bad and bad again", {"bad"})
+        assert count == 2
+        assert words == {"bad": 2}
+
+    def test_case_insensitive(self):
+        """Matching is case-insensitive."""
+        count, words = count_profanity_in_text("BAD Bad bad", {"bad"})
+        assert count == 3
 
 
 if __name__ == "__main__":

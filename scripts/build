@@ -1,2 +1,33 @@
 #!/bin/bash
-cd "$(dirname "$0")/.." && rm -rf web/data && mkdir -p web/data && touch web/data/.gitkeep && python3 scripts/export.py "$@"
+set -e
+
+cd "$(dirname "$0")/.."
+
+# Parse arguments
+EXPORT_ARGS=()
+SKIP_ANALYZE=false
+for arg in "$@"; do
+  if [ "$arg" = "--no-analyze" ]; then
+    SKIP_ANALYZE=true
+  else
+    EXPORT_ARGS+=("$arg")
+  fi
+done
+
+# Add --analyze flag for LLM theme analysis if API key is available
+# (Local analysis like links, profanity, energy always runs - it's fast and free)
+if [ "$SKIP_ANALYZE" = false ] && [ -n "$ANTHROPIC_API_KEY" ]; then
+  EXPORT_ARGS+=("--analyze")
+fi
+
+# Clear old data and run export
+rm -rf web/data && mkdir -p web/data && touch web/data/.gitkeep
+
+# Sync dependencies with uv (creates .venv if needed)
+uv sync --quiet
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  iMessage Stats - Building data export"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+uv run python scripts/export.py "${EXPORT_ARGS[@]}"

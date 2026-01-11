@@ -6,6 +6,7 @@
   <title>iMessage Stats</title>
   <link rel="stylesheet" href="style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 </head>
 <body>
   <aside class="sidebar">
@@ -23,13 +24,20 @@
     </div>
 
     <header id="contact-header" class="header" style="display: none;">
-      <h1 id="contact-name"></h1>
-      <span class="since" id="texting-since"></span>
+      <div class="header-info">
+        <h1 id="contact-name"></h1>
+        <span class="since" id="texting-since"></span>
+      </div>
+      <button id="screenshot-btn" class="screenshot-btn">Share</button>
     </header>
 
     <div id="chart-container" style="display: none;">
       <section id="year-filter-section" class="year-filter-section" style="display: none;">
         <div id="year-filter" class="year-filter-grid"></div>
+      </section>
+
+      <section id="contact-year-filter-section" class="year-filter-section contact-year-filter" style="display: none;">
+        <div id="contact-year-filter" class="year-filter-grid"></div>
       </section>
 
       <section class="stats">
@@ -52,8 +60,85 @@
         <p id="response-time"></p>
       </section>
 
+      <section id="analysis-section" class="analysis-section" style="display: none;">
+        <div id="analysis-year-filter" class="analysis-year-filter" style="display: none;">
+          <div id="analysis-year-filter-grid" class="year-filter-grid"></div>
+        </div>
+        <div class="analysis-card analysis-card-wide" id="temperature-card">
+          <div class="temperature-card-layout">
+            <div class="temperature-left">
+              <h3>Conversation Energy <span class="info-tooltip" data-tooltip="Score (1-5) based on message length, emoji usage, exclamation marks, questions, and emphasis.">[i]</span></h3>
+              <div class="energy-comparison">
+                <div class="energy-row">
+                  <span class="energy-name sent">You</span>
+                  <span class="energy-score sent" id="energy-value-you">--</span>
+                </div>
+                <div class="energy-progress" id="energy-bar-you"></div>
+                <div class="energy-row">
+                  <span class="energy-name received" id="energy-label-them">Them</span>
+                  <span class="energy-score received" id="energy-value-them">--</span>
+                </div>
+                <div class="energy-progress" id="energy-bar-them"></div>
+              </div>
+              <p class="temp-detail" id="temp-detail"></p>
+            </div>
+            <div class="temperature-right">
+              <div class="temperature-chart-legend" id="temperature-chart-legend"></div>
+              <div class="temperature-chart-wrapper">
+                <canvas id="temperature-chart"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="analysis-card" id="links-card" style="display: none;">
+          <div class="card-header-row">
+            <h3>Links Shared</h3>
+            <button class="view-all-link" id="view-all-links">View all</button>
+          </div>
+          <div class="card-stat">
+            <span class="sent"><span id="links-sent">0</span> sent</span>
+            <span class="links-divider">/</span>
+            <span class="received"><span id="links-received">0</span> received</span>
+          </div>
+          <div class="top-domains" id="top-domains"></div>
+        </div>
+        <div class="analysis-card" id="profanity-card" style="display: none;">
+          <div class="card-header" id="profanity-header">
+            <h3>Swear Words</h3>
+            <button class="profanity-toggle" id="profanity-toggle">Show</button>
+          </div>
+          <div class="card-stat" id="profanity-stat"></div>
+          <div class="profanity-details" id="profanity-details">
+            <div class="ranked-lists">
+              <div class="ranked-list">
+                <ol id="profanity-top-sent"></ol>
+              </div>
+              <div class="ranked-list">
+                <ol id="profanity-top-received"></ol>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="analysis-card" id="keywords-card" style="display: none;">
+          <h3>Common Topics</h3>
+          <div class="keywords-columns">
+            <div class="keywords-column">
+              <div class="keyword-tags" id="keywords-sent"></div>
+            </div>
+            <div class="keywords-column">
+              <div class="keyword-tags" id="keywords-received"></div>
+            </div>
+          </div>
+        </div>
+        <div class="analysis-card analysis-card-wide" id="themes-card" style="display: none;">
+          <h3>Conversation Themes</h3>
+          <div class="theme-tags" id="theme-tags"></div>
+          <p class="theme-summary" id="theme-summary"></p>
+        </div>
+      </section>
+
       <section id="top-contacts-section" class="top-contacts-section" style="display: none;">
-        <h2>Top contacts in <span id="top-contacts-year"></span></h2>
+        <h2>Top contacts <span id="top-contacts-year"></span></h2>
         <div id="top-contacts" class="top-contacts-grid"></div>
       </section>
 
@@ -96,6 +181,33 @@
       </section>
     </div>
   </main>
+
+  <dialog id="screenshot-dialog">
+    <div class="dialog-header">
+      <h3>Share</h3>
+      <button id="dialog-close" class="dialog-close">&times;</button>
+    </div>
+    <div class="dialog-body">
+      <img id="screenshot-preview" alt="Screenshot preview" />
+    </div>
+    <div class="dialog-actions">
+      <button id="copy-screenshot">Copy</button>
+      <button id="download-screenshot">Download</button>
+    </div>
+  </dialog>
+
+  <dialog id="links-dialog">
+    <div class="dialog-header">
+      <h3>Links Shared</h3>
+      <button class="dialog-close" id="links-dialog-close">&times;</button>
+    </div>
+    <div class="links-search-wrapper">
+      <input type="text" id="links-search" class="links-search" placeholder="Search links...">
+    </div>
+    <div class="dialog-body links-dialog-body">
+      <ul id="links-list" class="links-list"></ul>
+    </div>
+  </dialog>
 
   <script src="app.js"></script>
 </body>

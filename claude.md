@@ -23,6 +23,7 @@ A local-only tool that analyzes your iMessage history and visualizes messaging p
 ## Tech Stack
 
 - **Python 3.8+**: Data extraction from SQLite databases (iMessage + Contacts)
+- **uv**: Use `uv` for Python package management (NOT venv/pip)
 - **Vanilla JS**: Web frontend with Chart.js for visualizations
 - **No build step**: Plain HTML/CSS/JS served directly
 

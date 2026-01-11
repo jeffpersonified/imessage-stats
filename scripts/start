@@ -3,16 +3,26 @@ set -e
 
 cd "$(dirname "$0")/.."
 
+# Load .env file if it exists
+if [ -f ".env" ]; then
+  set -a
+  source .env
+  set +a
+fi
+
 # First argument is the port, default to 8080
 PORT="${1:-8080}"
 shift 2>/dev/null || true
 
-# Check for --fake flag
+# Check for special flags
 FAKE_MODE=""
 EXPORT_ARGS=()
+SKIP_ANALYZE=false
 for arg in "$@"; do
   if [ "$arg" = "--fake" ]; then
     FAKE_MODE="?fake=1"
+  elif [ "$arg" = "--no-analyze" ]; then
+    SKIP_ANALYZE=true
   else
     EXPORT_ARGS+=("$arg")
   fi
@@ -71,32 +81,120 @@ fi
 # Clear old data to ensure fresh export
 rm -rf web/data && mkdir -p web/data && touch web/data/.gitkeep
 
+# Prompt for LLM theme analysis if API key is available
+# (Local analysis like links, profanity, energy always runs - it's fast and free)
+if [ "$SKIP_ANALYZE" = false ]; then
+  if [ -n "$ANTHROPIC_API_KEY" ]; then
+    echo ""
+    read -p "Run AI-powered theme analysis? Y/n: " analyze_choice
+    if [[ "$analyze_choice" =~ ^[Nn]$ ]]; then
+      SKIP_ANALYZE=true
+    fi
+  else
+    SKIP_ANALYZE=true
+  fi
+fi
+
+# Add --analyze flag for LLM theme analysis
+if [ "$SKIP_ANALYZE" = false ]; then
+  EXPORT_ARGS+=("--analyze")
+fi
+
+# Sync dependencies with uv (creates .venv if needed)
+echo "  Installing dependencies..."
+uv sync --quiet
+
 # Export the data
-echo "Exporting your iMessage data..."
-python3 scripts/export.py "${EXPORT_ARGS[@]}"
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  iMessage Stats - Analyzing your message history"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Start the server in the background
-echo "Starting server at http://localhost:$PORT..."
-cd web && python3 -m http.server $PORT &
-SERVER_PID=$!
-cd ..
+# Remove any stale ready marker
+rm -f web/data/_ready
 
-# Clean up server on exit
-trap "kill $SERVER_PID 2>/dev/null" EXIT
+# Start a background watcher that starts the server when export is ready
+(
+  # Wait for the _ready marker file
+  while [ ! -f "web/data/_ready" ]; do
+    sleep 0.2
+  done
 
-# Wait for server to be ready
-echo "Waiting for server..."
-for i in {1..30}; do
-  if curl -s -o /dev/null http://localhost:$PORT 2>/dev/null; then
+  # Start the server
+  echo ""
+  echo "Starting server at http://localhost:$PORT..."
+  python3 -m http.server $PORT --directory web >/dev/null 2>&1 &
+  SERVER_PID=$!
+  echo $SERVER_PID > /tmp/imessage_stats_server_$$.pid
+
+  # Wait for server to be ready
+  for i in {1..30}; do
+    if curl -s -o /dev/null http://localhost:$PORT 2>/dev/null; then
+      break
+    fi
+    sleep 0.1
+  done
+
+  # Open browser
+  echo "Opening browser..."
+  open "http://localhost:$PORT${FAKE_MODE}"
+
+  echo ""
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "  Server running at http://localhost:$PORT"
+  if [ "$SKIP_ANALYZE" = false ]; then
+    echo "  Theme analysis running in background..."
+  fi
+  echo "  Press Ctrl+C to stop"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+) &
+WATCHER_PID=$!
+
+# Clean up on exit (handle Ctrl+C and other termination signals)
+cleanup() {
+  echo ""
+  echo "Shutting down iMessage Stats. Bye!"
+  # Kill the server if it was started
+  if [ -f "/tmp/imessage_stats_server_$$.pid" ]; then
+    kill $(cat /tmp/imessage_stats_server_$$.pid) 2>/dev/null
+    rm -f /tmp/imessage_stats_server_$$.pid
+  fi
+  kill $WATCHER_PID 2>/dev/null
+  rm -f web/data/_ready
+  exit 0
+}
+trap cleanup INT TERM
+
+# Run export in foreground (preserves TTY for progress bar)
+uv run python scripts/export.py "${EXPORT_ARGS[@]}"
+EXPORT_EXIT=$?
+
+# If export failed, clean up and exit
+if [ $EXPORT_EXIT -ne 0 ]; then
+  kill $WATCHER_PID 2>/dev/null
+  rm -f web/data/_ready
+  exit $EXPORT_EXIT
+fi
+
+# Wait for the watcher to start the server before cleaning up the ready marker
+SERVER_PID_FILE="/tmp/imessage_stats_server_$$.pid"
+for i in {1..50}; do
+  if [ -f "$SERVER_PID_FILE" ]; then
     break
   fi
   sleep 0.1
 done
 
-# Open browser once server is ready
-echo "Opening browser..."
-open "http://localhost:$PORT${FAKE_MODE}"
+# Clean up ready marker now that server has started
+rm -f web/data/_ready
 
-# Wait for server process (Ctrl+C to stop)
-echo "Server running (Ctrl+C to stop)"
-wait $SERVER_PID
+# Keep running while server is alive
+while true; do
+  if [ -f "$SERVER_PID_FILE" ]; then
+    SERVER_PID=$(cat "$SERVER_PID_FILE")
+    if ! kill -0 $SERVER_PID 2>/dev/null; then
+      break
+    fi
+  fi
+  sleep 1
+done
