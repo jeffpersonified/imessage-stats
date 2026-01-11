@@ -2,7 +2,7 @@
 
 Analyze your iMessage history to see who you text the most. Visualize messaging patterns over time.
 
-![iMessage Stats](cover.png)
+![iMessage Stats](cover.png?v=2)
 
 ## Features
 
