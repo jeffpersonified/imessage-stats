@@ -587,6 +587,7 @@ function renderAnalysis(analysis, contactName) {
   const themesCard = document.getElementById('themes-card');
   const tagsEl = document.getElementById('theme-tags');
   const summaryEl = document.getElementById('theme-summary');
+  const evolutionEl = document.getElementById('theme-evolution');
 
   if (analysis.llm_themes) {
     renderLlmThemes(analysis.llm_themes, currentContactYearFilter);
@@ -595,6 +596,7 @@ function renderAnalysis(analysis, contactName) {
     // Show loading state for pending contacts
     tagsEl.innerHTML = '<span class="theme-tag theme-loading">Analyzing...</span>';
     summaryEl.textContent = 'AI theme analysis is running in the background. This will update automatically.';
+    evolutionEl.style.display = 'none';
     themesCard.style.display = 'block';
   } else {
     themesCard.style.display = 'none';
@@ -899,6 +901,7 @@ function renderKeywords(keywordsData, contactName, year = 'all') {
 function renderLlmThemes(themesData, year = 'all') {
   const tagsEl = document.getElementById('theme-tags');
   const summaryEl = document.getElementById('theme-summary');
+  const evolutionEl = document.getElementById('theme-evolution');
 
   // Get data for selected year (fall back to "all" if year doesn't exist)
   // Handle both new format ({"all": {...}, "2024": {...}}) and legacy format ({themes: [...], summary: "..."})
@@ -925,6 +928,15 @@ function renderLlmThemes(themesData, year = 'all') {
 
   // Render summary
   summaryEl.textContent = summary;
+
+  // Render evolution (only when viewing "all" time and evolution data exists)
+  const evolution = themesData.evolution;
+  if (year === 'all' && evolution) {
+    evolutionEl.textContent = evolution;
+    evolutionEl.style.display = 'block';
+  } else {
+    evolutionEl.style.display = 'none';
+  }
 }
 
 // Render attachment details under sent/received stats

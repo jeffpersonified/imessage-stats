@@ -3,10 +3,16 @@ LLM-based theme extraction analyzer using Claude Haiku.
 
 Summarizes conversation themes from a sample of messages using Anthropic's API.
 Requires ANTHROPIC_API_KEY environment variable to be set.
+
+Uses VADER sentiment analysis for:
+1. Sentiment-aware sampling (oversample high-positive messages)
+2. Providing sentiment context to the LLM for better relationship understanding
 """
 
+import json
 import os
 import random
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -16,10 +22,75 @@ try:
 except ImportError:
     HAS_ANTHROPIC = False
 
+try:
+    from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+    HAS_VADER = True
+except ImportError:
+    HAS_VADER = False
+
+
+def _stratified_sample_by_year(messages, sample_size):
+    """Sample messages with stratification by year.
+
+    Ensures minimum representation from each year, then distributes
+    remaining budget proportionally.
+
+    Args:
+        messages: List of (text, is_from_me, year) tuples
+        sample_size: Target number of messages to sample
+
+    Returns:
+        List of sampled messages (same tuple format)
+    """
+    if len(messages) <= sample_size:
+        return list(messages)
+
+    # Group messages by year
+    by_year = {}
+    for msg in messages:
+        year = msg[2] if len(msg) > 2 else "unknown"
+        if year not in by_year:
+            by_year[year] = []
+        by_year[year].append(msg)
+
+    sampled = []
+    years_sorted = sorted(by_year.keys())
+    min_per_year = 5
+    remaining_budget = sample_size
+
+    # First pass: guarantee minimum representation from each year
+    for year in years_sorted:
+        year_msgs = by_year[year]
+        take = min(min_per_year, len(year_msgs), remaining_budget)
+        if take > 0:
+            sampled.extend(random.sample(year_msgs, take))
+            remaining_budget -= take
+
+    # Second pass: distribute remaining budget proportionally
+    if remaining_budget > 0:
+        sampled_set = set(sampled)  # O(1) lookups instead of O(n)
+        total_remaining = sum(max(0, len(by_year[y]) - min_per_year) for y in years_sorted)
+        if total_remaining > 0:
+            for year in years_sorted:
+                year_msgs = by_year[year]
+                already_taken = min(min_per_year, len(year_msgs))
+                available = len(year_msgs) - already_taken
+                if available > 0:
+                    proportion = available / total_remaining
+                    additional = min(available, int(remaining_budget * proportion))
+                    # Sample from messages not already taken
+                    remaining_msgs = [m for m in year_msgs if m not in sampled_set]
+                    if remaining_msgs and additional > 0:
+                        new_samples = random.sample(remaining_msgs, min(additional, len(remaining_msgs)))
+                        sampled.extend(new_samples)
+                        sampled_set.update(new_samples)
+
+    return sampled
+
 
 def analyze_llm_themes(messages, sample_size=500, client=None, contact_name=None,
                        total_sent=0, total_received=0, first_date=None, last_date=None,
-                       year_filter=None):
+                       year_filter=None, sentiment_stats=None):
     """Analyze conversation themes using Claude Haiku.
 
     Args:
@@ -32,6 +103,8 @@ def analyze_llm_themes(messages, sample_size=500, client=None, contact_name=None
         first_date: Date of first message (YYYY-MM-DD)
         last_date: Date of last message (YYYY-MM-DD)
         year_filter: Optional year string (e.g., "2024") to filter messages
+        sentiment_stats: Optional dict from sentiment.analyze_sentiment_full() with
+            aggregate sentiment statistics to include in prompt context
 
     Returns:
         Dict with themes, summary, sample_size, and skip_reason, or None if unavailable
@@ -59,43 +132,56 @@ def analyze_llm_themes(messages, sample_size=500, client=None, contact_name=None
     if len(valid_messages) < 10:
         return {"skip_reason": f"too few valid messages ({len(valid_messages)} < 10)"}
 
-    # Stratified sampling by year for better coverage across the relationship timeline
+    # Sentiment-aware sampling: oversample high-positive messages to capture emotional moments
     if len(valid_messages) > sample_size:
-        # Group messages by year
-        by_year = {}
-        for msg in valid_messages:
-            year = msg[2] or "unknown"
-            if year not in by_year:
-                by_year[year] = []
-            by_year[year].append(msg)
+        if HAS_VADER:
+            # Score all messages with VADER sentiment
+            analyzer = SentimentIntensityAnalyzer()
+            scored_messages = []
+            for msg in valid_messages:
+                text = msg[0]
+                compound = analyzer.polarity_scores(text)['compound']
+                scored_messages.append((msg, compound))
 
-        # Sample proportionally from each year, with a minimum of 5 per year
-        sampled = []
-        years_sorted = sorted(by_year.keys())
-        min_per_year = 5
-        remaining_budget = sample_size
+            # Partition into sentiment buckets
+            high_positive = [(m, s) for m, s in scored_messages if s > 0.5]
+            moderate = [(m, s) for m, s in scored_messages if -0.5 <= s <= 0.5]
+            negative = [(m, s) for m, s in scored_messages if s < -0.5]
 
-        # First pass: guarantee minimum representation from each year
-        for year in years_sorted:
-            year_msgs = by_year[year]
-            take = min(min_per_year, len(year_msgs))
-            sampled.extend(random.sample(year_msgs, take))
-            remaining_budget -= take
+            # Allocate budget: oversample high-positive to capture emotional moments
+            # 25% high-positive, 65% moderate, 10% negative (if exists)
+            high_pos_budget = int(sample_size * 0.25)
+            negative_budget = int(sample_size * 0.10)
+            moderate_budget = sample_size - high_pos_budget - negative_budget
 
-        # Second pass: distribute remaining budget proportionally
-        if remaining_budget > 0:
-            total_remaining = sum(max(0, len(by_year[y]) - min_per_year) for y in years_sorted)
-            if total_remaining > 0:
-                for year in years_sorted:
-                    year_msgs = by_year[year]
-                    already_taken = min(min_per_year, len(year_msgs))
-                    available = len(year_msgs) - already_taken
-                    if available > 0:
-                        proportion = available / total_remaining
-                        additional = min(available, int(remaining_budget * proportion))
-                        # Sample from messages not already taken
-                        remaining_msgs = [m for m in year_msgs if m not in sampled]
-                        sampled.extend(random.sample(remaining_msgs, min(additional, len(remaining_msgs))))
+            sampled = []
+
+            # Sample from high-positive bucket (stratified by year)
+            high_pos_msgs = [m for m, _ in high_positive]
+            sampled.extend(_stratified_sample_by_year(high_pos_msgs, min(high_pos_budget, len(high_pos_msgs))))
+
+            # Sample from moderate bucket (stratified by year)
+            moderate_msgs = [m for m, _ in moderate]
+            remaining_budget = sample_size - len(sampled)
+            moderate_take = min(moderate_budget, len(moderate_msgs), remaining_budget)
+            sampled.extend(_stratified_sample_by_year(moderate_msgs, moderate_take))
+
+            # Sample from negative bucket if exists (stratified by year)
+            if negative:
+                negative_msgs = [m for m, _ in negative]
+                remaining_budget = sample_size - len(sampled)
+                negative_take = min(negative_budget, len(negative_msgs), remaining_budget)
+                sampled.extend(_stratified_sample_by_year(negative_msgs, negative_take))
+
+            # Fill any remaining budget from moderate
+            if len(sampled) < sample_size and len(moderate_msgs) > moderate_take:
+                remaining = sample_size - len(sampled)
+                sampled_set = set(sampled)  # O(1) lookups instead of O(n)
+                unused = [m for m in moderate_msgs if m not in sampled_set]
+                sampled.extend(random.sample(unused, min(remaining, len(unused))))
+        else:
+            # Fallback to year-stratified sampling if VADER not available
+            sampled = _stratified_sample_by_year(valid_messages, sample_size)
     else:
         sampled = valid_messages
 
@@ -106,8 +192,8 @@ def analyze_llm_themes(messages, sample_size=500, client=None, contact_name=None
     formatted_messages = []
     for text, is_from_me in sampled:
         prefix = "Me:" if is_from_me else f"{contact_name or 'Them'}:"
-        # Truncate very long messages
-        truncated = text[:200] + "..." if len(text) > 200 else text
+        # Truncate very long messages (400 chars to preserve more emotional context)
+        truncated = text[:400] + "..." if len(text) > 400 else text
         formatted_messages.append(f"{prefix} {truncated}")
 
     conversation_sample = "\n".join(formatted_messages)
@@ -123,6 +209,20 @@ def analyze_llm_themes(messages, sample_size=500, client=None, contact_name=None
         context_parts.append(f"Total messages: {total_messages:,} ({total_sent:,} sent, {total_received:,} received)")
     if first_date and last_date:
         context_parts.append(f"Conversation period: {first_date} to {last_date}")
+
+    # Add sentiment context if available (from full-corpus VADER analysis)
+    if sentiment_stats and 'skip_reason' not in sentiment_stats:
+        hp = sentiment_stats.get('highly_positive_pct', 0)
+        avg = sentiment_stats.get('avg_compound', 0)
+        total_analyzed = sentiment_stats.get('total_analyzed', 0)
+
+        if hp > 10 or avg > 0.2 or avg < -0.1:
+            context_parts.append(f"Sentiment analysis (all {total_analyzed:,} messages):")
+            context_parts.append(f"  {hp:.0f}% highly positive, avg sentiment: {avg:.2f} (-1 to +1 scale)")
+            if hp > 20 and avg > 0.3:
+                context_parts.append("  This indicates a very warm, affectionate relationship")
+            elif hp > 15 or avg > 0.25:
+                context_parts.append("  This suggests a warm, positive relationship")
 
     context_block = "\n".join(context_parts) if context_parts else ""
 
@@ -146,12 +246,15 @@ Guidelines for themes:
 - Extract 3-5 specific themes that capture what these people actually talk about
 - Be specific: instead of "daily life", say "morning coffee routines" or "weekend plans"
 - Themes should be 1-4 words each
+- If sentiment analysis shows high positivity, include themes about emotional connection (e.g., "expressions of love", "emotional support", "daily affection")
 
 Guidelines for the summary:
 - Write in second person, addressing the user directly (e.g., "You and {first_name or 'this person'}...")
 - Be specific - mention concrete topics, inside jokes, or patterns you notice
-- Match the tone to the relationship: warm and personal for partners/family/close friends, more neutral for colleagues/acquaintances
-- NEVER use "intimate" to describe professional or collegial relationships
+- Match the tone to the relationship based on the sentiment analysis:
+  * If sentiment shows warmth (>15% highly positive, avg > 0.25): This is likely an intimate relationship (partner, spouse, close family). Reflect the love, affection, and emotional depth you observe.
+  * If sentiment is moderate: Match tone to the content - friendly for friends, professional for colleagues
+  * If sentiment is negative: Note any tension or conflict patterns
 - Avoid generic filler like "daily life", "social activities", "mutual support" - be concrete
 - One sentence only
 
@@ -161,12 +264,10 @@ Bad examples:
 Good examples:
 - "You and {first_name or 'them'} talk about startup ideas, design feedback, and coordinate meetups, with occasional debates about coffee shops." (colleague)
 - "You and {first_name or 'them'} share everything from parenting wins to late-night venting sessions, with a running thread of memes and recipe swaps." (close friend/family)
+- "You and {first_name or 'them'} share a deeply loving relationship, exchanging daily affirmations, coordinating your lives together, and supporting each other through challenges." (partner/spouse)
 """
 
     try:
-        import json
-        import re
-
         if client is None:
             client = anthropic.Anthropic(api_key=api_key)
         response = client.messages.create(
@@ -205,12 +306,128 @@ Good examples:
         return {"skip_reason": f"API error: {str(e)}"}
 
 
+def analyze_relationship_evolution(yearly_results, client=None, contact_name=None, sentiment_stats=None):
+    """Analyze how a relationship has evolved over time based on yearly analyses.
+
+    Args:
+        yearly_results: Dict mapping years to analysis results, e.g.:
+            {"2020": {"themes": [...], "summary": "..."}, "2021": {...}, ...}
+            (excludes "all" - only individual years)
+        client: Optional Anthropic client instance
+        contact_name: Name of the contact for personalized summary
+        sentiment_stats: Optional dict from sentiment.analyze_sentiment_full() with
+            per-year sentiment trends in the 'by_year' field
+
+    Returns:
+        Dict with "evolution" sentence, or None if unavailable
+    """
+    if not HAS_ANTHROPIC:
+        return {"skip_reason": "anthropic library not installed"}
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        return {"skip_reason": "ANTHROPIC_API_KEY not set"}
+
+    # Need at least 2 years of data to analyze evolution
+    years = sorted([y for y in yearly_results.keys() if y != "all" and yearly_results[y].get("themes")])
+    if len(years) < 2:
+        return {"skip_reason": "need at least 2 years of data"}
+
+    # Build a summary of each year's analysis with sentiment data
+    yearly_summaries = []
+    sentiment_by_year = sentiment_stats.get('by_year', {}) if sentiment_stats else {}
+
+    for year in years:
+        data = yearly_results[year]
+        themes = data.get("themes", [])
+        summary = data.get("summary", "")
+
+        # Add sentiment info if available
+        sentiment_line = ""
+        if year in sentiment_by_year:
+            year_sent = sentiment_by_year[year]
+            avg = year_sent.get('avg_compound', 0)
+            hp = year_sent.get('highly_positive_pct', 0)
+            sentiment_line = f"\n  Sentiment: avg {avg:.2f}, {hp:.0f}% highly positive"
+
+        yearly_summaries.append(f"{year}:\n  Themes: {', '.join(themes)}\n  Summary: {summary}{sentiment_line}")
+
+    yearly_block = "\n\n".join(yearly_summaries)
+    first_name = contact_name.split()[0] if contact_name else "this person"
+    time_span = f"{years[0]} to {years[-1]}"
+
+    prompt = f"""You are analyzing how a relationship has evolved over time based on yearly conversation summaries and sentiment trends.
+
+<context>
+Contact: {contact_name or "Unknown"}
+Time span: {time_span}
+</context>
+
+<yearly_analyses>
+{yearly_block}
+</yearly_analyses>
+
+Based on how the conversation themes, sentiment, and nature have changed from {years[0]} to {years[-1]}, write ONE sentence describing how this relationship has evolved over time.
+
+Guidelines:
+- Write in second person, addressing the user directly (e.g., "Your relationship with {first_name}...")
+- Focus on the trajectory or trend: has it deepened, become more casual, shifted focus, stayed consistent, etc.
+- Consider both thematic changes AND emotional trajectory (sentiment trends)
+- If sentiment has increased over time, note the growing warmth/closeness
+- Be specific about what changed (topics, tone, emotional depth)
+- Don't just list what was discussed each year - synthesize the overall arc
+- Keep it to one clear, insightful sentence
+
+Examples of good evolution sentences:
+- "Your relationship with {first_name} has deepened from casual work chat into a genuine friendship, with more personal sharing and inside jokes emerging over time."
+- "Over the years, your conversations with {first_name} have shifted from frequent social planning to more sporadic but meaningful check-ins."
+- "Your bond with {first_name} has grown stronger over time, with increasing emotional warmth and more intimate sharing as the years have passed."
+
+Respond with ONLY a JSON object in this exact format (no markdown, no explanation):
+{{"evolution": "Your evolution sentence here."}}"""
+
+    try:
+        if client is None:
+            client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model="claude-3-5-haiku-latest",
+            max_tokens=256,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        if not response.content:
+            return {"skip_reason": "empty API response"}
+        result_text = response.content[0].text.strip() if response.content[0].text else ""
+        if not result_text:
+            return {"skip_reason": "empty response text"}
+
+        # Try to extract JSON from markdown code blocks if present
+        json_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', result_text)
+        if json_match:
+            result_text = json_match.group(1).strip()
+
+        # Also try to find JSON object directly
+        if not result_text.startswith('{'):
+            json_start = result_text.find('{')
+            if json_start != -1:
+                result_text = result_text[json_start:]
+
+        result = json.loads(result_text)
+
+        return {
+            "evolution": result.get("evolution", "")
+        }
+
+    except Exception as e:
+        return {"skip_reason": f"API error: {str(e)}"}
+
+
 def _analyze_llm_worker(args, max_retries=3):
     """Worker function for parallel LLM analysis with retry logic.
 
     Args:
         args: Tuple of (contact_index, contact_info, messages, sample_size, client, year_filter)
-              contact_info is a dict with name, sent, received, first_date, last_date
+              contact_info is a dict with name, sent, received, first_date, last_date, sentiment_stats
               year_filter is optional - None for all-time, or a year string like "2024"
         max_retries: Maximum number of retries for rate limit errors
 
@@ -231,6 +448,7 @@ def _analyze_llm_worker(args, max_retries=3):
             first_date=contact_info.get("first_date"),
             last_date=contact_info.get("last_date"),
             year_filter=year_filter,
+            sentiment_stats=contact_info.get("sentiment_stats"),
         )
 
         # Check if we got a rate limit error and should retry
@@ -286,7 +504,9 @@ def run_llm_themes_parallel(contacts_to_analyze, sample_size=500, max_workers=2,
     # Prepare work items - one for all-time analysis per contact
     work_items = []
     items_per_contact = {}  # Track how many work items per contact
+    contact_info_by_idx = {}  # Store contact_info for evolution analysis
     for idx, contact_info, messages in contacts_to_analyze:
+        contact_info_by_idx[idx] = contact_info
         # All-time analysis (year_filter=None)
         work_items.append((idx, contact_info, messages, sample_size, client, None))
         items_per_contact[idx] = 1
@@ -332,10 +552,25 @@ def run_llm_themes_parallel(contacts_to_analyze, sample_size=500, max_workers=2,
             # Track completion per contact
             completed_per_contact[contact_index] += 1
 
-            # Call on_result_callback when all work for a contact is done
-            if on_result_callback and completed_per_contact[contact_index] == items_per_contact[contact_index]:
+            # When all work for a contact is done, generate evolution analysis and call callback
+            if completed_per_contact[contact_index] == items_per_contact[contact_index]:
                 if contact_index in results:
-                    on_result_callback(contact_index, results[contact_index])
+                    contact_results = results[contact_index]
+                    # Generate evolution analysis if we have 2+ yearly analyses
+                    if include_yearly:
+                        yearly_keys = [k for k in contact_results.keys() if k != "all" and contact_results[k].get("themes")]
+                        if len(yearly_keys) >= 2:
+                            contact_info = contact_info_by_idx.get(contact_index, {})
+                            evolution_result = analyze_relationship_evolution(
+                                contact_results,
+                                client=client,
+                                contact_name=contact_info.get("name"),
+                                sentiment_stats=contact_info.get("sentiment_stats")
+                            )
+                            if evolution_result and "evolution" in evolution_result:
+                                contact_results["evolution"] = evolution_result["evolution"]
+                    if on_result_callback:
+                        on_result_callback(contact_index, contact_results)
 
             if progress_callback:
                 progress_callback(i + 1, total, contact_name)
