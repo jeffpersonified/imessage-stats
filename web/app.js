@@ -31,6 +31,16 @@ const fakeNames = [
   'Sebastian Allen', 'Sofia King', 'Jack Wright', 'Avery Scott', 'Daniel Green'
 ];
 
+// Unicode characters that need variation selector (U+FE0F) for emoji presentation
+const EMOJI_NEEDS_VS = [
+  '\u2764', '\u2665', '\u2663', '\u2660', '\u2666', '\u2618', '\u2702', '\u2705',
+  '\u2708', '\u2709', '\u270A', '\u270B', '\u270C', '\u270F', '\u2712', '\u2714',
+  '\u2716', '\u2728', '\u2733', '\u2734', '\u2744', '\u2747', '\u2753', '\u2754',
+  '\u2755', '\u2757', '\u2763', '\u2795', '\u2796', '\u2797', '\u27A1', '\u2934',
+  '\u2935', '\u2B05', '\u2B06', '\u2B07', '\u2B1B', '\u2B1C', '\u2B50', '\u2B55',
+  '\u3030', '\u303D', '\u3297', '\u3299',
+];
+
 // Register custom tooltip positioner that keeps tooltip at fixed vertical position
 Chart.Tooltip.positioners.fixedTop = function(elements, eventPosition) {
   if (!elements.length) return false;
@@ -223,6 +233,7 @@ async function loadContact(filename, name, total, sent, received, firstDate) {
   yearFilterSection.style.display = 'none';
   topContactsSection.style.display = 'none';
   busiestMonthSection.style.display = 'none';
+  document.getElementById('global-emoji-section').style.display = 'none';
   patternsSection.style.display = 'block';
 
   // Reset year filters and scroll position
@@ -676,6 +687,9 @@ function updateAnalysisCardsForYear(year) {
   if (analysis.links) {
     renderLinks(analysis.links, currentContactName, year);
   }
+  if (analysis.emoji) {
+    renderEmoji(analysis.emoji, currentContactName, year);
+  }
 }
 
 // Render analysis section (temperature, links, keywords, themes)
@@ -711,6 +725,15 @@ function renderAnalysis(analysis, contactName) {
     linksCard.style.display = 'block';
   } else {
     linksCard.style.display = 'none';
+  }
+
+  // Render emoji if available
+  const emojiCard = document.getElementById('emoji-card');
+  if (analysis.emoji) {
+    renderEmoji(analysis.emoji, contactName, currentContactYearFilter);
+    emojiCard.style.display = 'block';
+  } else {
+    emojiCard.style.display = 'none';
   }
 
   // Render keywords if available
@@ -1034,6 +1057,75 @@ function renderKeywords(keywordsData, contactName, year = 'all') {
   } else {
     receivedEl.innerHTML = '<span class="no-keywords">No topics found</span>';
   }
+}
+
+// Helper to ensure emoji characters render as colorful emoji (not text glyphs)
+function ensureEmojiPresentation(emoji) {
+  if (emoji.length >= 1 && EMOJI_NEEDS_VS.includes(emoji[0]) && !emoji.includes('\uFE0F')) {
+    return emoji[0] + '\uFE0F' + emoji.slice(1);
+  }
+  return emoji;
+}
+
+// Render emoji card for per-contact view
+function renderEmoji(emojiData, contactName, year = 'all') {
+  const sentEl = document.getElementById('emoji-sent');
+  const receivedEl = document.getElementById('emoji-received');
+  const sentCountEl = document.getElementById('emoji-sent-count');
+  const receivedCountEl = document.getElementById('emoji-received-count');
+  const themLabelEl = document.getElementById('emoji-them-label');
+  const firstName = contactName.split(' ')[0];
+
+  // Update label with contact name
+  themLabelEl.textContent = firstName;
+
+  // Get data for selected year (fall back to "all" if year doesn't exist)
+  const yearData = emojiData[year] || emojiData.all || {};
+  const sentEmoji = yearData.sent?.top || [];
+  const receivedEmoji = yearData.received?.top || [];
+  const sentTotal = yearData.sent?.total || 0;
+  const receivedTotal = yearData.received?.total || 0;
+
+  // Update total counts in header
+  sentCountEl.textContent = formatNumber(sentTotal);
+  receivedCountEl.textContent = formatNumber(receivedTotal);
+
+  // Render sent emojis (top 5)
+  if (sentEmoji.length > 0) {
+    sentEl.innerHTML = sentEmoji.slice(0, 5).map(e =>
+      `<span class="emoji-item sent-emoji"><span class="emoji">${ensureEmojiPresentation(e.emoji)}</span><span class="count">${formatNumber(e.count)}</span></span>`
+    ).join('');
+  } else {
+    sentEl.innerHTML = '<span class="no-emoji">No emojis</span>';
+  }
+
+  // Render received emojis (top 5)
+  if (receivedEmoji.length > 0) {
+    receivedEl.innerHTML = receivedEmoji.slice(0, 5).map(e =>
+      `<span class="emoji-item received-emoji"><span class="emoji">${ensureEmojiPresentation(e.emoji)}</span><span class="count">${formatNumber(e.count)}</span></span>`
+    ).join('');
+  } else {
+    receivedEl.innerHTML = '<span class="no-emoji">No emojis</span>';
+  }
+}
+
+// Render global emoji section for Everyone view
+function renderGlobalEmoji(emojiData) {
+  const section = document.getElementById('global-emoji-section');
+  const grid = document.getElementById('global-emoji');
+
+  if (!emojiData || !emojiData.top || emojiData.top.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  // Show top 5 emojis
+  const topEmoji = emojiData.top.slice(0, 5);
+  grid.innerHTML = topEmoji.map(e =>
+    `<div class="global-emoji-item"><span class="emoji">${ensureEmojiPresentation(e.emoji)}</span><span class="count">${formatNumber(e.count)}</span></div>`
+  ).join('');
+
+  section.style.display = 'block';
 }
 
 // Render LLM themes card
@@ -1627,6 +1719,13 @@ function loadEveryoneYear(year) {
   currentContactData = { monthly };
   renderChart();
   renderHeatmap(heatmap);
+
+  // Render global emoji section
+  if (year === 'all') {
+    renderGlobalEmoji(everyoneData.emoji);
+  } else {
+    renderGlobalEmoji(everyoneData.by_year[year].emoji);
+  }
 }
 
 // Event listeners

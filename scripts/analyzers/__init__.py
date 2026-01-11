@@ -10,6 +10,7 @@ from .temperature import analyze_temperature
 from .links import analyze_links
 from .profanity import analyze_profanity
 from .laughter import analyze_laughter
+from .emoji import analyze_emoji
 from .semantic_topics import analyze_semantic_topics
 from .llm_themes import analyze_llm_themes
 from .base import run_analyzers_parallel

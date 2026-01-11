@@ -104,6 +104,24 @@
           </div>
           <div class="top-domains" id="top-domains"></div>
         </div>
+        <div class="analysis-card" id="emoji-card" style="display: none;">
+          <h3>Emoji Usage</h3>
+          <div class="card-stat">
+            <span class="sent"><span id="emoji-sent-count">0</span> sent</span>
+            <span class="links-divider">/</span>
+            <span class="received"><span id="emoji-received-count">0</span> received</span>
+          </div>
+          <div class="emoji-grid-section">
+            <div class="emoji-row">
+              <span class="emoji-row-label sent">You</span>
+              <div class="emoji-list" id="emoji-sent"></div>
+            </div>
+            <div class="emoji-row">
+              <span class="emoji-row-label received" id="emoji-them-label">Them</span>
+              <div class="emoji-list" id="emoji-received"></div>
+            </div>
+          </div>
+        </div>
         <div class="analysis-card" id="keywords-card" style="display: none;">
           <h3>Common Topics</h3>
           <div class="keywords-columns">
@@ -126,6 +144,11 @@
       <section id="top-contacts-section" class="top-contacts-section" style="display: none;">
         <h2>Top contacts <span id="top-contacts-year"></span></h2>
         <div id="top-contacts" class="top-contacts-grid"></div>
+      </section>
+
+      <section id="global-emoji-section" class="global-emoji-section" style="display: none;">
+        <h2>Top emojis</h2>
+        <div id="global-emoji" class="global-emoji-grid"></div>
       </section>
 
       <section id="busiest-month-section" style="display: none;">

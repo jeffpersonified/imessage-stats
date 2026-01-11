@@ -1289,3 +1289,108 @@ section p {
   font-size: 12px;
   text-align: center;
 }
+
+/* Global emoji section */
+.global-emoji-section h2 {
+  margin-bottom: 16px;
+}
+
+.global-emoji-grid {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.global-emoji-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 16px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  min-width: 60px;
+}
+
+.global-emoji-item .emoji {
+  font-size: 28px;
+  line-height: 1;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif;
+}
+
+.global-emoji-item .count {
+  font-size: 11px;
+  color: var(--text);
+}
+
+/* Per-contact emoji card */
+.emoji-grid-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.emoji-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.emoji-row-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  min-width: 40px;
+  padding-top: 6px;
+}
+
+.emoji-row-label.sent {
+  color: var(--sent);
+}
+
+.emoji-row-label.received {
+  color: var(--received);
+}
+
+.emoji-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+}
+
+.emoji-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: #1a1a1a;
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.emoji-item .emoji {
+  font-size: 16px;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif;
+}
+
+.emoji-item .count {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.emoji-item.sent-emoji {
+  border-color: rgba(255, 204, 0, 0.3);
+}
+
+.emoji-item.received-emoji {
+  border-color: rgba(191, 90, 242, 0.3);
+}
+
+.no-emoji {
+  font-size: 12px;
+  color: var(--text);
+}

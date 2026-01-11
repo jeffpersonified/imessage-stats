@@ -485,6 +485,99 @@ def get_yearly_links(cursor):
     return dict(yearly_links)
 
 
+def get_global_emoji(cursor):
+    """Get top emojis from message text across all 1-on-1 conversations.
+
+    Extracts text from attributedBody when text column is empty (newer macOS).
+    Returns top 10 most used emojis overall.
+    """
+    from analyzers.emoji import extract_emojis
+    from collections import Counter
+
+    cursor.execute("""
+        SELECT
+            m.text,
+            m.attributedBody
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+    """)
+
+    all_emojis = []
+
+    for text, attr_body in cursor.fetchall():
+        # Prefer text column, fall back to extracting from attributedBody
+        msg_text = text if text and text.strip() else None
+        if not msg_text and attr_body:
+            msg_text = extract_text_from_attributed_body(attr_body)
+
+        if msg_text:
+            emojis = extract_emojis(msg_text)
+            all_emojis.extend(emojis)
+
+    if not all_emojis:
+        return {"total": 0, "top": []}
+
+    counts = Counter(all_emojis)
+    top = counts.most_common(10)
+
+    return {
+        "total": len(all_emojis),
+        "top": [{"emoji": e, "count": c} for e, c in top]
+    }
+
+
+def get_yearly_emoji(cursor):
+    """Get top emojis by year from message text across all 1-on-1 conversations.
+
+    Extracts text from attributedBody when text column is empty (newer macOS).
+    Returns top 10 emojis per year.
+    """
+    from analyzers.emoji import extract_emojis
+    from collections import Counter
+
+    cursor.execute("""
+        SELECT
+            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
+            m.text,
+            m.attributedBody
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+    """)
+
+    yearly_emojis = defaultdict(list)
+
+    for year, text, attr_body in cursor.fetchall():
+        if not year:
+            continue
+
+        # Prefer text column, fall back to extracting from attributedBody
+        msg_text = text if text and text.strip() else None
+        if not msg_text and attr_body:
+            msg_text = extract_text_from_attributed_body(attr_body)
+
+        if msg_text:
+            emojis = extract_emojis(msg_text)
+            yearly_emojis[year].extend(emojis)
+
+    result = {}
+    for year, emojis in yearly_emojis.items():
+        if emojis:
+            counts = Counter(emojis)
+            top = counts.most_common(10)
+            result[year] = {
+                "total": len(emojis),
+                "top": [{"emoji": e, "count": c} for e, c in top]
+            }
+        else:
+            result[year] = {"total": 0, "top": []}
+
+    return result
+
+
 def get_yearly_top_identifiers(cursor, top_n=8):
     """Get identifiers that appear in any year's top N by message count.
 
@@ -516,10 +609,12 @@ def get_yearly_top_identifiers(cursor, top_n=8):
     return set(row[0] for row in cursor.fetchall())
 
 
-def get_yearly_data(cursor, global_monthly, contacts_export, yearly_links=None):
+def get_yearly_data(cursor, global_monthly, contacts_export, yearly_links=None, yearly_emoji=None):
     """Get per-year statistics including top contacts and busiest month."""
     if yearly_links is None:
         yearly_links = {}
+    if yearly_emoji is None:
+        yearly_emoji = {}
     # Build a lookup from identifier to contact export data
     contact_by_identifier = {}
     for c in contacts_export:
@@ -656,6 +751,7 @@ def get_yearly_data(cursor, global_monthly, contacts_export, yearly_links=None):
             "time_heatmap": yearly_heatmaps[year],
             "attachments": yearly_attachments[year],
             "links": yearly_links.get(year, {"links_sent": 0, "links_received": 0}),
+            "emoji": yearly_emoji.get(year, {"total": 0, "top": []}),
             "top_contacts": top_contacts,
             "busiest_month": busiest_month,
         }

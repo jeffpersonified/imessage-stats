@@ -22,7 +22,7 @@ from queries import (
     get_monthly_messages, get_time_heatmap, get_attachments, get_attachments_by_year,
     get_heatmap_by_year, get_response_stats, get_global_stats, get_global_monthly,
     get_global_heatmap, get_global_attachments, get_global_links, get_yearly_links,
-    get_yearly_top_identifiers, get_yearly_data,
+    get_global_emoji, get_yearly_emoji, get_yearly_top_identifiers, get_yearly_data,
 )
 
 
@@ -233,7 +233,7 @@ def main():
     from analyzers import run_analyzers_parallel
 
     # Local analyzers that always run
-    analyzer_names = ["temperature", "links", "profanity", "laughter"]
+    analyzer_names = ["temperature", "links", "profanity", "laughter", "emoji"]
 
     # LLM theme analysis requires --analyze flag AND API key
     args.use_llm_themes = False
@@ -391,8 +391,11 @@ def main():
     print("  Extracting link statistics...")
     global_links = get_global_links(cursor)
     yearly_links = get_yearly_links(cursor)
+    print("  Extracting emoji statistics...")
+    global_emoji = get_global_emoji(cursor)
+    yearly_emoji = get_yearly_emoji(cursor)
     print("  Computing per-year breakdowns...")
-    yearly_data = get_yearly_data(cursor, global_monthly, contacts_export, yearly_links)
+    yearly_data = get_yearly_data(cursor, global_monthly, contacts_export, yearly_links, yearly_emoji)
     global_elapsed = format_duration(time.time() - global_start_time)
     print(f"  Done ({global_elapsed})")
 
@@ -420,6 +423,7 @@ def main():
         "time_heatmap": global_heatmap,
         "attachments": global_attachments,
         "links": global_links,
+        "emoji": global_emoji,
         "by_year": yearly_data,
         "top_contacts": all_time_top_contacts,
     }
