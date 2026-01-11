@@ -30,9 +30,13 @@ The easiest way to use iMessage Stats is with the native Mac app.
 
 The app will automatically read your iMessage and Contacts databases - no manual file copying required.
 
-### Option 2: Command Line (Python Scripts)
+> **Why Full Disk Access?** macOS protects your Messages database at `~/Library/Messages/chat.db`. Any app that reads your iMessage history needs this permission - there's no way around it. If you're uncomfortable granting this access, use Option 2 below where you manually copy the files yourself.
+>
+> **Is this safe?** This app is [fully open source](https://github.com/jeffpersonified/imessage-stats). It runs 100% locally, makes no network requests, and you can audit every line of code. Your messages never leave your computer.
 
-If you prefer running from the terminal or want to customize the scripts:
+### Option 2: Command Line (No Special Permissions)
+
+If you'd rather not grant Full Disk Access, you can manually copy your data and run Python scripts. This method requires Python 3.8+ but doesn't need any special permissions since you're copying the files yourself.
 
 #### 1. Clone the repo
 
