@@ -2,7 +2,6 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'path';
 import { checkFullDiskAccess, openSystemPreferences } from './permissions';
 import { setupIpcHandlers } from './ipc-handlers';
-import { startWatching, stopWatching } from './file-watcher';
 
 declare const MAIN_WINDOW_WEBPACK_ENTRY: string;
 
@@ -40,7 +39,6 @@ const createWindow = (): void => {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
-    stopWatching();
   });
 };
 
@@ -53,11 +51,6 @@ app.on('ready', async () => {
   if (mainWindow) {
     mainWindow.webContents.on('did-finish-load', () => {
       mainWindow?.webContents.send('permissions:status', { hasFullDiskAccess: hasAccess });
-
-      // Start file watching if we have access
-      if (hasAccess && mainWindow) {
-        startWatching(mainWindow);
-      }
     });
   }
 });

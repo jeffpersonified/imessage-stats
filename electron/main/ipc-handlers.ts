@@ -1,7 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { runExport } from '../../src/exporter';
 import { ExportOptions, ExportProgress, ContactSummary, ContactData, EveryoneData } from '../../src/exporter/types';
-import { startWatching } from './file-watcher';
 
 // In-memory cache of exported data
 let cachedContacts: ContactSummary[] = [];
@@ -34,11 +33,6 @@ export function setupIpcHandlers(): void {
       cachedContacts = result.contacts;
       cachedMessages = new Map(Object.entries(result.messages));
       cachedEveryone = result.everyone;
-
-      // Start watching after successful export
-      if (win && !win.isDestroyed()) {
-        startWatching(win);
-      }
 
       return { success: true, contactCount: result.contacts.length };
     } catch (error) {
