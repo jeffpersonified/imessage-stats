@@ -282,10 +282,7 @@ def main():
 
     conn.close()
 
-    print(f"\nDone! Exported to {output_dir}")
-    print(f"\nTo view:")
-    print(f"  cd {output_dir.parent} && python3 -m http.server 8080")
-    print(f"  Open http://localhost:8080")
+    print(f"\nDone! Exported {len(top_contacts)} contacts to {output_dir}")
 
 
 if __name__ == "__main__":

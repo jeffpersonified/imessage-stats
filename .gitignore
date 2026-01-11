@@ -4,6 +4,8 @@ web/data/messages/
 
 # User's copied databases (contains personal information)
 chat.db
+chat.db-shm
+chat.db-wal
 Sources/
 
 # Python

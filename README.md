@@ -20,7 +20,7 @@ Analyze your iMessage history to see who you text the most. Visualize messaging 
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/imessage-stats.git
+git clone https://github.com/brianlovin/imessage-stats.git
 cd imessage-stats
 ```
 
@@ -44,29 +44,75 @@ imessage-stats/
 └── ...
 ```
 
-### 3. Export your data
+### 3. Run it
 
 ```bash
-./scripts/build
+./scripts/start
 ```
 
-### 4. Start the web server
-
-```bash
-./scripts/serve
-```
-
-### 5. View your stats
-
-Open [http://localhost:8080](http://localhost:8080)
+This exports your data, starts a local server, and opens your browser.
 
 ## Options
 
 ```bash
-./scripts/build --limit 50      # Export top 50 contacts
-./scripts/build --help          # Show all options
+./scripts/start --limit 50      # Only export top 50 contacts
+./scripts/build                 # Just export data (no server)
+./scripts/serve                 # Just start server
 ./scripts/serve 3000            # Use a different port
 ```
+
+## Notion Sync (Optional)
+
+Sync your stats to a Notion database for easy sharing or further analysis.
+
+### 1. Install uv
+
+```bash
+brew install uv
+```
+
+### 2. Create a Notion integration
+
+1. Go to [notion.so/my-integrations](https://www.notion.so/my-integrations)
+2. Click "New integration"
+3. Name it (e.g., "iMessage Stats")
+4. Click "Submit"
+5. Copy the "Internal Integration Secret" (starts with `secret_`)
+
+### 3. Create an empty database in Notion
+
+Create a new database anywhere in your workspace. The script will automatically add the required columns.
+
+### 4. Share the database with your integration
+
+Open your database in Notion → "..." menu → "Connections" → add your integration.
+
+### 5. Get the database ID
+
+The database ID is in the URL when viewing your database:
+
+```
+https://notion.so/workspace/DATABASE_ID?v=...
+                         ^^^^^^^^^^^
+```
+
+Copy the 32-character ID (the part before `?v=`).
+
+### 6. Configure your credentials
+
+```bash
+cp notion/.env.example notion/.env
+```
+
+Edit `notion/.env` with your API key and database ID.
+
+### 7. Sync
+
+```bash
+./scripts/notion
+```
+
+The script will add the required columns and sync your contacts. Run it again anytime to update.
 
 ## Privacy
 
@@ -95,10 +141,6 @@ macOS stores iMessage history in a SQLite database at `~/Library/Messages/chat.d
 
 Contact names are stored in `~/Library/Application Support/AddressBook/Sources/*/AddressBook-v22.abcddb`. The script matches phone numbers and emails to names.
 
-### Timestamp Format
-
-Apple stores timestamps as nanoseconds since January 1, 2001. The script converts these to standard dates.
-
 ## Troubleshooting
 
 ### "Database not found" error
@@ -117,11 +159,3 @@ The Contacts sources folder might be empty or in a different location. Try:
 # Find your Contacts databases
 find ~/Library -name "AddressBook-v22.abcddb" 2>/dev/null
 ```
-
-### Permission denied when copying
-
-Grant **Full Disk Access** to Finder or Terminal:
-
-1. System Settings → Privacy & Security → Full Disk Access
-2. Add Finder (or Terminal)
-3. Try copying again

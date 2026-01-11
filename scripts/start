@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+
+cd "$(dirname "$0")/.."
+
+# Export the data
+echo "Exporting your iMessage data..."
+python3 export.py "$@"
+
+# Open browser (do this before starting server so it's ready when page loads)
+echo "Opening browser..."
+open "http://localhost:8080"
+
+# Start the server (this blocks until Ctrl+C)
+echo "Starting server at http://localhost:8080 (Ctrl+C to stop)"
+cd web && python3 -m http.server 8080

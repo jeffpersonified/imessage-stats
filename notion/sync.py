@@ -20,8 +20,8 @@ from pathlib import Path
 try:
     import requests
     from dotenv import load_dotenv
-except ImportError as e:
-    print(f"Error: Missing dependency. Install with: pip install -r requirements.txt")
+except ImportError:
+    print("Error: Missing dependencies. Run this script with: ./scripts/notion")
     sys.exit(1)
 
 # Load .env file from notion/ directory
@@ -69,13 +69,22 @@ def ensure_properties(api_key, database_id):
         "Content-Type": "application/json",
     }
 
-    # Required properties (title property "Contact" is handled separately)
+    # Required properties (title property is handled separately)
+    # Order: Name, Total, Received, Sent, Ratio, First, Last, Phone/Email
     required = {
-        "Phone/Email": {"rich_text": {}},
-        "Sent": {"number": {"format": "number"}},
+        "Total": {
+            "formula": {"expression": 'prop("Sent") + prop("Received")'}
+        },
         "Received": {"number": {"format": "number"}},
-        "First Message": {"date": {}},
-        "Last Message": {"date": {}},
+        "Sent": {"number": {"format": "number"}},
+        "Ratio": {
+            "formula": {
+                "expression": 'if(prop("Received") == 0, 0, round(prop("Sent") / prop("Received") * 100) / 100)'
+            }
+        },
+        "First": {"date": {}},
+        "Last": {"date": {}},
+        "Phone/Email": {"rich_text": {}},
     }
 
     # Get current database schema
@@ -91,7 +100,7 @@ def ensure_properties(api_key, database_id):
     data = response.json()
     current = data.get("properties", {})
 
-    # Find the title property (might not be named "Contact")
+    # Find the title property (might not be named "Name")
     title_prop = None
     for name, prop in current.items():
         if prop.get("type") == "title":
@@ -180,9 +189,9 @@ def create_page(api_key, database_id, contact, title_prop="Name"):
     }
 
     if contact.get("first_date"):
-        properties["First Message"] = {"date": {"start": contact["first_date"]}}
+        properties["First"] = {"date": {"start": contact["first_date"]}}
     if contact.get("last_date"):
-        properties["Last Message"] = {"date": {"start": contact["last_date"]}}
+        properties["Last"] = {"date": {"start": contact["last_date"]}}
 
     payload = {
         "parent": {"database_id": database_id},
