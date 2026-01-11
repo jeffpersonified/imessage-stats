@@ -205,10 +205,10 @@ def get_heatmap_by_year(cursor, handle_ids):
 def _compute_response_stats(messages):
     """Compute response stats from a list of (timestamp, is_from_me) tuples.
 
-    Returns dict with you_avg_seconds, them_avg_seconds, you_start_pct.
+    Returns dict with you_avg_seconds, them_avg_seconds, you_start_pct, you_end_pct.
     """
     if len(messages) < 2:
-        return {"you_avg_seconds": None, "them_avg_seconds": None, "you_start_pct": None}
+        return {"you_avg_seconds": None, "them_avg_seconds": None, "you_start_pct": None, "you_end_pct": None}
 
     CONVERSATION_GAP = 4 * 60 * 60 * 1e9  # 4 hours in nanoseconds
     RESPONSE_MAX = 60 * 60 * 1e9  # Only count responses within 1 hour as actual responses
@@ -217,6 +217,8 @@ def _compute_response_stats(messages):
     their_response_times = []
     conversations_you_started = 0
     conversations_they_started = 0
+    conversations_you_ended = 0
+    conversations_they_ended = 0
 
     # The first message starts the first conversation
     prev_ts, prev_from_me = messages[0]
@@ -230,6 +232,12 @@ def _compute_response_stats(messages):
 
         # Check if this is a new conversation
         if gap > CONVERSATION_GAP:
+            # The previous sender ended the last conversation
+            if prev_from_me:
+                conversations_you_ended += 1
+            else:
+                conversations_they_ended += 1
+            # The current sender starts this conversation
             if is_from_me:
                 conversations_you_started += 1
             else:
@@ -244,6 +252,12 @@ def _compute_response_stats(messages):
 
         prev_ts, prev_from_me = ts, is_from_me
 
+    # The last message ends the final conversation
+    if prev_from_me:
+        conversations_you_ended += 1
+    else:
+        conversations_they_ended += 1
+
     # Calculate averages
     you_avg = sum(your_response_times) / len(your_response_times) if your_response_times else None
     them_avg = sum(their_response_times) / len(their_response_times) if their_response_times else None
@@ -251,10 +265,14 @@ def _compute_response_stats(messages):
     total_convos = conversations_you_started + conversations_they_started
     you_start_pct = conversations_you_started / total_convos if total_convos > 0 else None
 
+    total_ended = conversations_you_ended + conversations_they_ended
+    you_end_pct = conversations_you_ended / total_ended if total_ended > 0 else None
+
     return {
         "you_avg_seconds": round(you_avg) if you_avg else None,
         "them_avg_seconds": round(them_avg) if them_avg else None,
-        "you_start_pct": round(you_start_pct, 2) if you_start_pct is not None else None
+        "you_start_pct": round(you_start_pct, 2) if you_start_pct is not None else None,
+        "you_end_pct": round(you_end_pct, 2) if you_end_pct is not None else None
     }
 
 

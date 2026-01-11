@@ -151,9 +151,11 @@ const statSent = document.getElementById("stat-sent");
 const statReceived = document.getElementById("stat-received");
 const toggleButtons = document.querySelectorAll(".toggle button");
 const convoStarterEl = document.getElementById("convo-starter");
+const convoEnderEl = document.getElementById("convo-ender");
 const responseTimeEl = document.getElementById("response-time");
 const laughComparisonEl = document.getElementById("laugh-comparison");
 const swearComparisonEl = document.getElementById("swear-comparison");
+const questionRatioEl = document.getElementById("question-ratio");
 const statTotalDetail = document.getElementById("stat-total-detail");
 const statSentDetail = document.getElementById("stat-sent-detail");
 const statReceivedDetail = document.getElementById("stat-received-detail");
@@ -506,37 +508,57 @@ function renderPatterns(data, year = "all") {
   const usePastTense = year !== "all" && year < currentYear;
 
   // Conversation starter
+  const starterIcon = '<span class="pattern-icon">▶</span>';
   if (stats.you_start_pct !== null && stats.you_start_pct !== undefined) {
     const youPct = Math.round(stats.you_start_pct * 100);
     const themPct = 100 - youPct;
     if (youPct > themPct) {
       const verb = usePastTense ? "started" : "start";
-      convoStarterEl.innerHTML = `<span class="you">You</span> ${verb} the conversation ${youPct}% of the time`;
+      convoStarterEl.innerHTML = `${starterIcon}<span class="you">You</span> ${verb} the conversation <span class="stat-highlight">${youPct}%</span> of the time`;
     } else if (themPct > youPct) {
       const verb = usePastTense ? "started" : "starts";
-      convoStarterEl.innerHTML = `<span class="them">${name}</span> ${verb} the conversation ${themPct}% of the time`;
+      convoStarterEl.innerHTML = `${starterIcon}<span class="them">${name}</span> ${verb} the conversation <span class="stat-highlight">${themPct}%</span> of the time`;
     } else {
       const verb = usePastTense ? "started" : "start";
-      convoStarterEl.textContent = `You both ${verb} conversations equally`;
+      convoStarterEl.innerHTML = `${starterIcon}You both ${verb} conversations equally`;
     }
   } else {
     convoStarterEl.textContent = "";
   }
 
+  // Conversation ender (who sends the last message)
+  const enderIcon = '<span class="pattern-icon">■</span>';
+  if (stats.you_end_pct !== null && stats.you_end_pct !== undefined) {
+    const youPct = Math.round(stats.you_end_pct * 100);
+    const themPct = 100 - youPct;
+    if (youPct > themPct) {
+      const verb = usePastTense ? "tended" : "tend";
+      convoEnderEl.innerHTML = `${enderIcon}<span class="you">You</span> ${verb} to have the final word, being the last person to send a message in <span class="stat-highlight">${youPct}%</span> of chats`;
+    } else if (themPct > youPct) {
+      const verb = usePastTense ? "tended" : "tends";
+      convoEnderEl.innerHTML = `${enderIcon}<span class="them">${name}</span> ${verb} to have the final word, being the last person to send a message in <span class="stat-highlight">${themPct}%</span> of chats`;
+    } else {
+      convoEnderEl.innerHTML = `${enderIcon}You both have the final word equally`;
+    }
+  } else {
+    convoEnderEl.textContent = "";
+  }
+
   // Response times
+  const responseIcon = '<span class="pattern-icon">⏱</span>';
   const youTime = formatTime(stats.you_avg_seconds);
   const themTime = formatTime(stats.them_avg_seconds);
 
   if (youTime && themTime) {
     const verb = usePastTense ? "responded" : "responds";
     const youVerb = usePastTense ? "responded" : "respond";
-    responseTimeEl.innerHTML = `<span class="them">${name}</span> ${verb} in about ${themTime}, <span class="you">you</span> ${youVerb} in about ${youTime}`;
+    responseTimeEl.innerHTML = `${responseIcon}<span class="them">${name}</span> ${verb} in about ${themTime}, <span class="you">you</span> ${youVerb} in about ${youTime}`;
   } else if (youTime) {
     const verb = usePastTense ? "responded" : "respond";
-    responseTimeEl.innerHTML = `<span class="you">You</span> ${verb} in about ${youTime}`;
+    responseTimeEl.innerHTML = `${responseIcon}<span class="you">You</span> ${verb} in about ${youTime}`;
   } else if (themTime) {
     const verb = usePastTense ? "responded" : "responds";
-    responseTimeEl.innerHTML = `<span class="them">${name}</span> ${verb} in about ${themTime}`;
+    responseTimeEl.innerHTML = `${responseIcon}<span class="them">${name}</span> ${verb} in about ${themTime}`;
   } else {
     responseTimeEl.textContent = "";
   }
@@ -544,6 +566,7 @@ function renderPatterns(data, year = "all") {
   // Laughter comparison (who makes the other person laugh more)
   // sent = laughs in YOUR messages (they made you laugh)
   // received = laughs in THEIR messages (you made them laugh)
+  const laughIcon = '<span class="pattern-icon">☺</span>';
   const laughterData = data.analysis?.laughter;
   if (laughterData) {
     const yearData = laughterData[year] || laughterData.all || {};
@@ -558,19 +581,19 @@ function renderPatterns(data, year = "all") {
 
       if (youMadeThemLaugh > theyMadeYouLaugh) {
         const verb = usePastTense ? "made" : "make";
-        mainText = `<span class="you">You</span> ${verb} <span class="them">${name}</span> laugh more often`;
+        mainText = `${laughIcon}<span class="you">You</span> ${verb} <span class="them">${name}</span> laugh more often`;
         if (topReceived) {
           detailText = ` — big "${topReceived}" energy`;
         }
       } else if (theyMadeYouLaugh > youMadeThemLaugh) {
         const verb = usePastTense ? "made" : "makes";
-        mainText = `<span class="them">${name}</span> ${verb} you laugh more often`;
+        mainText = `${laughIcon}<span class="them">${name}</span> ${verb} you laugh more often`;
         if (topSent) {
           detailText = ` — big "${topSent}" energy`;
         }
       } else {
         const verb = usePastTense ? "made" : "make";
-        mainText = `You both ${verb} each other laugh equally`;
+        mainText = `${laughIcon}You both ${verb} each other laugh equally`;
       }
 
       laughComparisonEl.innerHTML = mainText + detailText;
@@ -585,6 +608,7 @@ function renderPatterns(data, year = "all") {
   // Clear any existing scramble animation
   clearScrambleIntervals();
 
+  const swearIcon = '<span class="pattern-icon">※</span>';
   const profanityData = data.analysis?.profanity;
   if (profanityData) {
     const yearData = profanityData[year] || profanityData.all || {};
@@ -600,21 +624,21 @@ function renderPatterns(data, year = "all") {
 
       if (youCount > themCount) {
         const verb = usePastTense ? "swore" : "swear";
-        mainText = `<span class="you">You</span> ${verb} more`;
+        mainText = `${swearIcon}<span class="you">You</span> ${verb} more`;
         if (topSent) {
           favoriteWord = topSent.word;
           favoriteLabel = "Your favorite:";
         }
       } else if (themCount > youCount) {
         const verb = usePastTense ? "swore" : "swears";
-        mainText = `<span class="them">${name}</span> ${verb} more`;
+        mainText = `${swearIcon}<span class="them">${name}</span> ${verb} more`;
         if (topReceived) {
           favoriteWord = topReceived.word;
           favoriteLabel = `${name}'s favorite:`;
         }
       } else {
         const verb = usePastTense ? "swore" : "swear";
-        mainText = `You both ${verb} equally`;
+        mainText = `${swearIcon}You both ${verb} equally`;
         // Show your favorite if tied
         if (topSent) {
           favoriteWord = topSent.word;
@@ -657,6 +681,39 @@ function renderPatterns(data, year = "all") {
     }
   } else {
     swearComparisonEl.textContent = "";
+  }
+
+  // Question ratio (who asks more questions)
+  const questionIcon = '<span class="pattern-icon">?</span>';
+  const questionData = data.analysis?.questions;
+  if (questionData) {
+    const yearData = questionData[year] || questionData.all || {};
+    const youQuestions = yearData.sent || 0;
+    const themQuestions = yearData.received || 0;
+    const totalQuestions = youQuestions + themQuestions;
+
+    if (totalQuestions > 0) {
+      const youPct = Math.round((youQuestions / totalQuestions) * 100);
+      const themPct = 100 - youPct;
+      const totalFormatted = totalQuestions.toLocaleString();
+      const verb = usePastTense ? "asked" : "have asked";
+
+      let mainText = `${questionIcon}<span class="you">You</span> and <span class="them">${name}</span> ${verb} each other ${totalFormatted} questions — `;
+
+      if (youQuestions > themQuestions) {
+        mainText += `<span class="you">You</span> asked <span class="stat-highlight">${youPct}%</span> of them`;
+      } else if (themQuestions > youQuestions) {
+        mainText += `<span class="them">${name}</span> asked <span class="stat-highlight">${themPct}%</span> of them`;
+      } else {
+        mainText += `<span class="you">You</span> each asked half`;
+      }
+
+      questionRatioEl.innerHTML = mainText;
+    } else {
+      questionRatioEl.textContent = "";
+    }
+  } else {
+    questionRatioEl.textContent = "";
   }
 }
 
@@ -846,9 +903,13 @@ function renderAnalysis(analysis, contactName) {
 
   // Render message style if available
   if (analysis.message_style) {
-    renderMessageStyle(analysis.message_style, contactName, currentContactYearFilter);
+    renderMessageStyle(
+      analysis.message_style,
+      contactName,
+      currentContactYearFilter
+    );
   } else {
-    messageStyleCard.style.display = 'none';
+    messageStyleCard.style.display = "none";
   }
 
   // Render links if available
@@ -1104,13 +1165,13 @@ function renderTemperatureChart(tempData, firstName, year = "all") {
 }
 
 // Render message style card with conversation shape visualization
-function renderMessageStyle(styleData, contactName, year = 'all') {
+function renderMessageStyle(styleData, contactName, year = "all") {
   if (!styleData || !messageStyleCard) {
-    if (messageStyleCard) messageStyleCard.style.display = 'none';
+    if (messageStyleCard) messageStyleCard.style.display = "none";
     return;
   }
 
-  const firstName = contactName.split(' ')[0];
+  const firstName = contactName.split(" ")[0];
 
   // Get data for selected year (fall back to "all" if year doesn't exist)
   const yearData = styleData[year] || styleData.all || {};
@@ -1119,21 +1180,25 @@ function renderMessageStyle(styleData, contactName, year = 'all') {
 
   // Check if we have meaningful data
   if (!sentMetrics.total_messages && !receivedMetrics.total_messages) {
-    messageStyleCard.style.display = 'none';
+    messageStyleCard.style.display = "none";
     return;
   }
 
-  messageStyleCard.style.display = 'block';
+  messageStyleCard.style.display = "block";
 
   // Generate bubbles based on message style
-  const sentBubbles = generateBubbles(sentMetrics, 'sent');
-  const receivedBubbles = generateBubbles(receivedMetrics, 'received');
+  const sentBubbles = generateBubbles(sentMetrics, "sent");
+  const receivedBubbles = generateBubbles(receivedMetrics, "received");
 
   bubblesSent.innerHTML = sentBubbles;
   bubblesReceived.innerHTML = receivedBubbles;
 
   // Generate narrative text
-  const narrative = generateStyleNarrative(sentMetrics, receivedMetrics, firstName);
+  const narrative = generateStyleNarrative(
+    sentMetrics,
+    receivedMetrics,
+    firstName
+  );
   styleNarrativeText.innerHTML = narrative;
 
   // Populate technical stats
@@ -1170,28 +1235,49 @@ function generateBubbles(metrics, direction) {
   // Predefined width multipliers for natural-looking variance
   const widthPatterns = {
     1: [[1.0]],
-    2: [[1.0, 0.65], [0.85, 1.0], [1.0, 0.75]],
-    3: [[1.0, 0.7, 0.85], [0.9, 1.0, 0.6], [0.75, 0.95, 0.55], [1.0, 0.55, 0.8]],
-    4: [[1.0, 0.6, 0.85, 0.5], [0.9, 0.55, 1.0, 0.7], [0.8, 1.0, 0.5, 0.65]]
+    2: [
+      [1.0, 0.65],
+      [0.85, 1.0],
+      [1.0, 0.75],
+    ],
+    3: [
+      [1.0, 0.7, 0.85],
+      [0.9, 1.0, 0.6],
+      [0.75, 0.95, 0.55],
+      [1.0, 0.55, 0.8],
+    ],
+    4: [
+      [1.0, 0.6, 0.85, 0.5],
+      [0.9, 0.55, 1.0, 0.7],
+      [0.8, 1.0, 0.5, 0.65],
+    ],
   };
 
   // Pick random width pattern
   const widthPatternOptions = widthPatterns[bubbleCount];
-  const widthPattern = widthPatternOptions[Math.floor(Math.random() * widthPatternOptions.length)];
+  const widthPattern =
+    widthPatternOptions[Math.floor(Math.random() * widthPatternOptions.length)];
 
   // Generate bubbles with appropriate heights
   // For long-message writers with multiple bubbles: first bubble tall, rest single-line
   // This reflects the pattern of one main message + quick follow-ups
   const bubbles = [];
   for (let i = 0; i < bubbleCount; i++) {
-    const width = Math.round(Math.max(minWidth, Math.min(maxWidth, baseWidth * widthPattern[i])));
+    const width = Math.round(
+      Math.max(minWidth, Math.min(maxWidth, baseWidth * widthPattern[i]))
+    );
     // First bubble gets tall height if they write long, others are single-line follow-ups
-    const height = (writesLong && (bubbleCount === 1 || i === 0)) ? doubleLineHeight : singleLineHeight;
+    const height =
+      writesLong && (bubbleCount === 1 || i === 0)
+        ? doubleLineHeight
+        : singleLineHeight;
     const borderRadius = Math.min(height / 2, 16);
-    bubbles.push(`<div class="message-bubble ${direction}" style="width: ${width}px; height: ${height}px; border-radius: ${borderRadius}px"></div>`);
+    bubbles.push(
+      `<div class="message-bubble ${direction}" style="width: ${width}px; height: ${height}px; border-radius: ${borderRadius}px"></div>`
+    );
   }
 
-  return bubbles.join('');
+  return bubbles.join("");
 }
 
 // Generate narrative text comparing message styles
@@ -1210,18 +1296,27 @@ function generateStyleNarrative(sentMetrics, receivedMetrics, firstName) {
 
   // Describe length difference in human terms (threshold: 15% AND 2+ words)
   if (pctDiff > 0.15 && absDiff > 2) {
-    const ratio = Math.max(youLength, themLength) / Math.min(youLength, themLength);
+    const ratio =
+      Math.max(youLength, themLength) / Math.min(youLength, themLength);
     if (lengthDiff > 0) {
       if (ratio > 1.5) {
-        parts.push(`<span class="you">You</span> tend to write much longer messages`);
+        parts.push(
+          `<span class="you">You</span> tend to write much longer messages`
+        );
       } else {
-        parts.push(`<span class="you">You</span> tend to write longer messages`);
+        parts.push(
+          `<span class="you">You</span> tend to write longer messages`
+        );
       }
     } else {
       if (ratio > 1.5) {
-        parts.push(`<span class="them">${firstName}</span> tends to write much longer messages`);
+        parts.push(
+          `<span class="them">${firstName}</span> tends to write much longer messages`
+        );
       } else {
-        parts.push(`<span class="them">${firstName}</span> tends to write longer messages`);
+        parts.push(
+          `<span class="them">${firstName}</span> tends to write longer messages`
+        );
       }
     }
   } else {
@@ -1233,15 +1328,19 @@ function generateStyleNarrative(sentMetrics, receivedMetrics, firstName) {
 
   if (turnDiff > 0.4 && (youPerTurn > 1.8 || themPerTurn > 1.8)) {
     if (youPerTurn > themPerTurn) {
-      parts.push(`<span class="you">you</span> tend to rapid-fire multiple messages in a row`);
+      parts.push(
+        `<span class="you">you</span> tend to rapid-fire multiple messages in a row`
+      );
     } else {
-      parts.push(`<span class="them">${firstName}</span> tends to send multiple messages in a row`);
+      parts.push(
+        `<span class="them">${firstName}</span> tends to send multiple messages in a row`
+      );
     }
   } else if (youPerTurn > 2.2 && themPerTurn > 2.2) {
     parts.push(`you both tend to send messages in quick bursts`);
   }
 
-  return parts.join('; ') + (parts.length > 0 ? '.' : '');
+  return parts.join("; ") + (parts.length > 0 ? "." : "");
 }
 
 // Render links shared card
