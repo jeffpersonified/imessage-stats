@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "setup": "cp $CONDUCTOR_ROOT_PATH/chat.db . && cp $CONDUCTOR_ROOT_PATH/chat.db-shm . && cp $CONDUCTOR_ROOT_PATH/chat.db-wal . && cp -r $CONDUCTOR_ROOT_PATH/Sources .",
+    "setup": "cp $CONDUCTOR_ROOT_PATH/chat.db . && cp $CONDUCTOR_ROOT_PATH/chat.db-shm . && cp $CONDUCTOR_ROOT_PATH/chat.db-wal . && cp -r $CONDUCTOR_ROOT_PATH/Sources . && cp $CONDUCTOR_ROOT_PATH/.env .",
     "run": "./scripts/start $CONDUCTOR_PORT"
   }
 }
