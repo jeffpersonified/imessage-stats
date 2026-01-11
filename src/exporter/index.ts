@@ -2,6 +2,7 @@ import { openMessagesDb } from './database';
 import { loadContacts, lookupContact, ContactMaps } from './contacts';
 import { getHandleStats, getMonthlyMessages, getTimeHeatmap, getAttachments } from './messages';
 import { getResponseStats } from './response-stats';
+import { generateEveryoneData } from './global-stats';
 import { convertAppleTimestamp, formatDate } from './timestamp-utils';
 import { safeFilename } from './phone-utils';
 import {
@@ -183,6 +184,16 @@ export async function runExport(options: ExportOptions): Promise<ExportResult> {
     };
   }
 
+  // Phase 5: Generate Everyone aggregation data
+  report({
+    phase: 'exporting',
+    current: topContacts.length,
+    total: topContacts.length,
+    message: 'Generating global statistics...',
+  });
+
+  const everyone = generateEveryoneData(db, contacts);
+
   db.close();
 
   report({
@@ -192,5 +203,5 @@ export async function runExport(options: ExportOptions): Promise<ExportResult> {
     message: `Exported ${topContacts.length} contacts`,
   });
 
-  return { contacts, messages };
+  return { contacts, messages, everyone };
 }

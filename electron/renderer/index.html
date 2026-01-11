@@ -47,6 +47,10 @@
 
   <!-- Main app -->
   <aside class="sidebar">
+    <div id="everyone-tab" class="everyone-tab">
+      <div class="tab-name">iMessage Stats</div>
+      <div class="tab-meta" id="everyone-total"></div>
+    </div>
     <div class="sidebar-header">
       <input type="text" id="search" placeholder="Search...">
     </div>
@@ -64,6 +68,10 @@
     </header>
 
     <div id="chart-container" style="display: none;">
+      <section id="year-filter-section" class="year-filter-section" style="display: none;">
+        <div id="year-filter" class="year-filter-grid"></div>
+      </section>
+
       <section class="stats">
         <div class="stat-col">
           <p id="stat-total"></p>
@@ -82,6 +90,15 @@
       <section class="patterns">
         <p id="convo-starter"></p>
         <p id="response-time"></p>
+      </section>
+
+      <section id="top-contacts-section" class="top-contacts-section" style="display: none;">
+        <h2>Top contacts in <span id="top-contacts-year"></span></h2>
+        <div id="top-contacts" class="top-contacts-grid"></div>
+      </section>
+
+      <section id="busiest-month-section" style="display: none;">
+        <p id="busiest-month"></p>
       </section>
 
       <section class="heatmap-section">

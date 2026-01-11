@@ -75,11 +75,52 @@ export interface ContactData {
 }
 
 /**
+ * Top contact for yearly view
+ */
+export interface TopContact {
+  rank: number;
+  name: string;
+  filename: string;
+  total: number;
+  sent: number;
+  received: number;
+}
+
+/**
+ * Per-year data for Everyone view
+ */
+export interface YearData {
+  sent: number;
+  received: number;
+  monthly: MonthlyData[];
+  time_heatmap: number[][];
+  attachments: AttachmentCounts;
+  top_contacts: TopContact[];
+  busiest_month: { month: string; total: number } | null;
+}
+
+/**
+ * Everyone aggregation data
+ */
+export interface EveryoneData {
+  total_sent: number;
+  total_received: number;
+  first_date: string | null;
+  last_date: string | null;
+  years: string[];
+  monthly: MonthlyData[];
+  time_heatmap: number[][];
+  attachments: AttachmentCounts;
+  by_year: Record<string, YearData>;
+}
+
+/**
  * Result of running an export
  */
 export interface ExportResult {
   contacts: ContactSummary[];
   messages: Record<string, ContactData>;
+  everyone: EveryoneData;
 }
 
 /**

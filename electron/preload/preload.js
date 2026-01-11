@@ -22,6 +22,10 @@ const electronAPI = {
     get: (filename) => ipcRenderer.invoke('contacts:get', filename),
   },
 
+  everyone: {
+    get: () => ipcRenderer.invoke('everyone:get'),
+  },
+
   data: {
     isLoaded: () => ipcRenderer.invoke('data:isLoaded'),
     onDatabaseChanged: (callback) => {

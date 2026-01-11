@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { ExportProgress, ContactSummary, ContactData } from '../../src/exporter/types';
+import { ExportProgress, ContactSummary, ContactData, EveryoneData } from '../../src/exporter/types';
 
 export interface ElectronAPI {
   // Permissions
@@ -19,6 +19,11 @@ export interface ElectronAPI {
   contacts: {
     list: () => Promise<ContactSummary[]>;
     get: (filename: string) => Promise<ContactData | null>;
+  };
+
+  // Everyone aggregation data
+  everyone: {
+    get: () => Promise<EveryoneData | null>;
   };
 
   // Data
@@ -47,6 +52,10 @@ const electronAPI: ElectronAPI = {
   contacts: {
     list: () => ipcRenderer.invoke('contacts:list'),
     get: (filename) => ipcRenderer.invoke('contacts:get', filename),
+  },
+
+  everyone: {
+    get: () => ipcRenderer.invoke('everyone:get'),
   },
 
   data: {

@@ -1,6 +1,6 @@
 import './style.css';
 import { Chart, registerables, Tooltip, ChartType, TooltipPositionerFunction, Plugin, BarElement } from 'chart.js';
-import type { ContactSummary, ContactData, ExportProgress } from '../../src/exporter/types';
+import type { ContactSummary, ContactData, ExportProgress, EveryoneData, TopContact } from '../../src/exporter/types';
 
 // Register Chart.js components
 Chart.register(...registerables);
@@ -51,6 +51,10 @@ let currentContactData: ContactData | null = null;
 let currentView: 'month' | 'year' = 'month';
 let currentFirstName = '';
 let currentHeatmapData: number[][] | null = null;
+let everyoneData: EveryoneData | null = null;
+let currentYearFilter = 'all';
+let isEveryoneView = false;
+let isNavigatingFromPopState = false;
 
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -79,6 +83,19 @@ const heatmapCanvas = document.getElementById('heatmap') as HTMLCanvasElement;
 const heatmapTooltip = document.getElementById('heatmap-tooltip') as HTMLDivElement;
 const heatmapLabel = document.getElementById('heatmap-label') as HTMLParagraphElement;
 const toggleButtons = document.querySelectorAll('.toggle button');
+
+// Everyone view elements
+const everyoneTab = document.getElementById('everyone-tab') as HTMLDivElement;
+const everyoneTotal = document.getElementById('everyone-total') as HTMLDivElement;
+const yearFilterSection = document.getElementById('year-filter-section') as HTMLElement;
+const yearFilterGrid = document.getElementById('year-filter') as HTMLDivElement;
+const topContactsSection = document.getElementById('top-contacts-section') as HTMLElement;
+const topContactsYear = document.getElementById('top-contacts-year') as HTMLSpanElement;
+const topContactsGrid = document.getElementById('top-contacts') as HTMLDivElement;
+const busiestMonthSection = document.getElementById('busiest-month-section') as HTMLElement;
+const busiestMonthEl = document.getElementById('busiest-month') as HTMLParagraphElement;
+const patternsSection = document.querySelector('.patterns') as HTMLElement;
+const chartToggle = document.querySelector('.chart-section .toggle') as HTMLDivElement;
 
 // Utility functions
 function formatNumber(n: number): string {
@@ -172,13 +189,27 @@ async function loadContact(
   received: number,
   firstDate: string
 ) {
+  isEveryoneView = false;
+
   // Update URL hash
-  history.replaceState(null, '', `#${filename}`);
+  if (isNavigatingFromPopState) {
+    isNavigatingFromPopState = false;
+  } else {
+    history.pushState(null, '', `#${filename}`);
+  }
 
   // Update active state
+  everyoneTab.classList.remove('active');
   document.querySelectorAll('#contact-list li').forEach((li) => {
     li.classList.toggle('active', (li as HTMLLIElement).dataset.filename === filename);
   });
+
+  // Hide Everyone-specific elements, show contact-specific
+  yearFilterSection.style.display = 'none';
+  topContactsSection.style.display = 'none';
+  busiestMonthSection.style.display = 'none';
+  patternsSection.style.display = 'block';
+  chartToggle.style.display = 'flex';
 
   // Update header
   contactNameEl.textContent = name;
@@ -481,6 +512,9 @@ function renderChart() {
             maxRotation: 45,
             minRotation: 45,
             callback: function (value, index) {
+              // Hide all labels for single year on aggregate view
+              if (isEveryoneView && currentYearFilter !== 'all') return null;
+
               if (currentView === 'year') return this.getLabelForValue(value as number);
               if (yearStartIndices.has(index)) return this.getLabelForValue(value as number);
               return null;
@@ -505,6 +539,159 @@ function renderChart() {
   });
 }
 
+// Render year filter buttons
+function renderYearFilter(years: string[]) {
+  yearFilterGrid.innerHTML = '<button data-year="all" class="active">All time</button>' +
+    years.map(y => `<button data-year="${y}">${y}</button>`).join('');
+}
+
+// Update active state on year filter buttons
+function updateYearFilterActive(year: string) {
+  yearFilterGrid.querySelectorAll('button').forEach(btn => {
+    btn.classList.toggle('active', (btn as HTMLButtonElement).dataset.year === year);
+  });
+}
+
+// Format month as "January 2024"
+function formatMonthLong(monthStr: string): string {
+  const [year, month] = monthStr.split('-');
+  return new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric'
+  });
+}
+
+// Render top contacts grid
+function renderTopContacts(topContacts: TopContact[]) {
+  topContactsGrid.innerHTML = topContacts.map(c => `
+    <div class="top-contact-card" data-filename="${c.filename}">
+      <div class="top-contact-rank">#${c.rank}</div>
+      <div class="top-contact-name">${c.name}</div>
+      <div class="top-contact-count">${formatNumber(c.total)} messages</div>
+    </div>
+  `).join('');
+}
+
+// Load Everyone view
+async function loadEveryone() {
+  isEveryoneView = true;
+
+  // Update URL hash
+  const newHash = currentYearFilter === 'all' ? '#everyone' : `#everyone/${currentYearFilter}`;
+  if (isNavigatingFromPopState) {
+    isNavigatingFromPopState = false;
+  } else {
+    history.pushState(null, '', newHash);
+  }
+
+  // Update active states
+  everyoneTab.classList.add('active');
+  document.querySelectorAll('#contact-list li').forEach(li => {
+    li.classList.remove('active');
+  });
+
+  // Show/hide appropriate sections
+  welcome.style.display = 'none';
+  contactHeader.style.display = 'block';
+  chartContainer.style.display = 'block';
+  yearFilterSection.style.display = 'block';
+  patternsSection.style.display = 'none';
+
+  // Fetch everyone data if not loaded
+  if (!everyoneData) {
+    try {
+      everyoneData = await window.electronAPI.everyone.get();
+      if (everyoneData) {
+        renderYearFilter(everyoneData.years);
+        everyoneTotal.textContent = `${formatNumber(everyoneData.total_sent + everyoneData.total_received)} messages`;
+      }
+    } catch (err) {
+      console.error('Failed to load everyone data:', err);
+      return;
+    }
+  }
+
+  // Apply current year filter
+  loadEveryoneYear(currentYearFilter);
+}
+
+// Load Everyone view for a specific year
+function loadEveryoneYear(year: string) {
+  if (!everyoneData) return;
+
+  currentYearFilter = year;
+  updateYearFilterActive(year);
+
+  let sent: number, received: number, monthly, heatmap, attachments;
+
+  if (year === 'all') {
+    sent = everyoneData.total_sent;
+    received = everyoneData.total_received;
+    monthly = everyoneData.monthly;
+    heatmap = everyoneData.time_heatmap;
+    attachments = everyoneData.attachments;
+
+    // Hide year-specific sections
+    topContactsSection.style.display = 'none';
+    busiestMonthSection.style.display = 'none';
+
+    // Show month/year toggle for all-time view
+    chartToggle.style.display = 'flex';
+  } else {
+    const yearData = everyoneData.by_year[year];
+    if (!yearData) return;
+
+    sent = yearData.sent;
+    received = yearData.received;
+    monthly = yearData.monthly;
+    heatmap = yearData.time_heatmap;
+    attachments = yearData.attachments;
+
+    // Show top contacts for this year
+    if (yearData.top_contacts && yearData.top_contacts.length > 0) {
+      topContactsYear.textContent = year;
+      renderTopContacts(yearData.top_contacts);
+      topContactsSection.style.display = 'block';
+    } else {
+      topContactsSection.style.display = 'none';
+    }
+
+    // Show busiest month
+    if (yearData.busiest_month) {
+      busiestMonthEl.innerHTML = `Your busiest month was <span>${formatMonthLong(yearData.busiest_month.month)}</span> with ${formatNumber(yearData.busiest_month.total)} messages`;
+      busiestMonthSection.style.display = 'block';
+    } else {
+      busiestMonthSection.style.display = 'none';
+    }
+
+    // Hide month/year toggle for single year
+    chartToggle.style.display = 'none';
+    // Reset to month view if currently on year view
+    if (currentView === 'year') {
+      currentView = 'month';
+      toggleButtons.forEach(b => b.classList.toggle('active', (b as HTMLButtonElement).dataset.view === 'month'));
+    }
+  }
+
+  // Update header
+  contactNameEl.textContent = 'iMessage Stats';
+  textingSince.textContent = '';
+
+  // Update stats
+  const total = sent + received;
+  statTotal.innerHTML = `<span class="num">${formatNumber(total)}</span> messages`;
+  statSent.innerHTML = `<span class="sent">${formatNumber(sent)}</span> sent`;
+  statReceived.innerHTML = `<span class="received">${formatNumber(received)}</span> received`;
+
+  // Update attachment details
+  renderAttachmentDetails(attachments);
+
+  // Update chart and heatmap
+  currentContactData = { monthly } as ContactData;
+  renderChart();
+  renderHeatmap(heatmap);
+}
+
 // Event listeners
 contactList.addEventListener('click', (e) => {
   const li = (e.target as HTMLElement).closest('li') as HTMLLIElement;
@@ -524,35 +711,105 @@ searchInput.addEventListener('input', (e) => {
   renderContacts((e.target as HTMLInputElement).value);
 });
 
+// Everyone tab click
+everyoneTab.addEventListener('click', () => {
+  currentYearFilter = 'all';
+  loadEveryone();
+});
+
+// Year filter button click
+yearFilterGrid.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest('button') as HTMLButtonElement;
+  if (btn) {
+    const year = btn.dataset.year || 'all';
+    const newHash = year === 'all' ? '#everyone' : `#everyone/${year}`;
+    history.pushState(null, '', newHash);
+    loadEveryoneYear(year);
+  }
+});
+
+// Top contacts card click
+topContactsGrid.addEventListener('click', (e) => {
+  const card = (e.target as HTMLElement).closest('.top-contact-card') as HTMLDivElement;
+  if (card) {
+    const filename = card.dataset.filename;
+    const contact = contacts.find(c => c.filename === filename);
+    if (contact) {
+      loadContact(contact.filename, contact.name, contact.total, contact.sent, contact.received, contact.first_date || '');
+    }
+  }
+});
+
+// Keyboard navigation (includes Everyone tab)
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  // Skip if typing in search
   if (document.activeElement === searchInput && searchInput.value) return;
+
+  // Left/right arrows for year filter navigation on aggregate view
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && isEveryoneView && everyoneData) {
+    e.preventDefault();
+
+    const yearOptions = ['all', ...everyoneData.years];
+    let idx = yearOptions.indexOf(currentYearFilter);
+    if (idx === -1) idx = 0;
+
+    if (e.key === 'ArrowLeft') {
+      idx = idx > 0 ? idx - 1 : yearOptions.length - 1;
+    } else {
+      idx = idx < yearOptions.length - 1 ? idx + 1 : 0;
+    }
+
+    const newYear = yearOptions[idx];
+    const newHash = newYear === 'all' ? '#everyone' : `#everyone/${newYear}`;
+    history.pushState(null, '', newHash);
+    loadEveryoneYear(newYear);
+
+    // Focus the newly active button
+    const activeBtn = yearFilterGrid.querySelector('button.active') as HTMLButtonElement;
+    if (activeBtn) activeBtn.focus();
+    return;
+  }
+
+  // Up/down arrows for contact navigation
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
 
   e.preventDefault();
 
   const items = Array.from(contactList.querySelectorAll('li'));
-  if (items.length === 0) return;
-
-  const activeItem = contactList.querySelector('li.active');
-  let currentIndex = activeItem ? items.indexOf(activeItem as HTMLLIElement) : -1;
+  // Index -1 = Everyone, 0+ = contacts
+  let currentIndex = isEveryoneView ? -1 : items.findIndex(li => li.classList.contains('active'));
 
   if (e.key === 'ArrowDown') {
-    currentIndex = currentIndex < items.length - 1 ? currentIndex + 1 : 0;
+    if (currentIndex < items.length - 1) {
+      currentIndex++;
+    } else {
+      currentIndex = -1; // Wrap to Everyone
+    }
   } else if (e.key === 'ArrowUp') {
-    currentIndex = currentIndex > 0 ? currentIndex - 1 : items.length - 1;
+    if (currentIndex > -1) {
+      currentIndex--;
+    } else {
+      currentIndex = items.length - 1; // Wrap to last contact
+    }
   }
 
-  const targetItem = items[currentIndex] as HTMLLIElement;
-  if (targetItem) {
-    targetItem.scrollIntoView({ block: 'nearest' });
-    loadContact(
-      targetItem.dataset.filename || '',
-      targetItem.dataset.name || '',
-      parseInt(targetItem.dataset.total || '0'),
-      parseInt(targetItem.dataset.sent || '0'),
-      parseInt(targetItem.dataset.received || '0'),
-      targetItem.dataset.first || ''
-    );
+  if (currentIndex === -1) {
+    // Select Everyone
+    currentYearFilter = 'all';
+    loadEveryone();
+  } else {
+    const targetItem = items[currentIndex] as HTMLLIElement;
+    if (targetItem) {
+      targetItem.scrollIntoView({ block: 'nearest' });
+      loadContact(
+        targetItem.dataset.filename || '',
+        targetItem.dataset.name || '',
+        parseInt(targetItem.dataset.total || '0'),
+        parseInt(targetItem.dataset.sent || '0'),
+        parseInt(targetItem.dataset.received || '0'),
+        targetItem.dataset.first || ''
+      );
+    }
   }
 });
 
@@ -610,6 +867,34 @@ openSettingsBtn.addEventListener('click', () => {
   window.electronAPI.permissions.openSettings();
 });
 
+// Handle browser back/forward navigation
+window.addEventListener('popstate', () => {
+  const hash = window.location.hash.slice(1);
+  isNavigatingFromPopState = true;
+
+  if (hash === 'everyone' || hash === '') {
+    currentYearFilter = 'all';
+    loadEveryone();
+  } else if (hash.startsWith('everyone/')) {
+    const year = hash.split('/')[1];
+    if (everyoneData && everyoneData.years.includes(year)) {
+      currentYearFilter = year;
+    } else {
+      currentYearFilter = 'all';
+    }
+    loadEveryone();
+  } else {
+    // Contact view
+    const contact = contacts.find(c => c.filename === hash);
+    if (contact) {
+      loadContact(contact.filename, contact.name, contact.total, contact.sent, contact.received, contact.first_date || '');
+    } else {
+      currentYearFilter = 'all';
+      loadEveryone();
+    }
+  }
+});
+
 // Refresh data when database changes
 async function refreshData() {
   showLoading('Refreshing data...', 0);
@@ -619,11 +904,20 @@ async function refreshData() {
   const result = await window.electronAPI.export.start();
   if (result.success) {
     contacts = await window.electronAPI.contacts.list();
+    everyoneData = await window.electronAPI.everyone.get();
     renderContacts(searchInput.value);
 
-    // Reload current contact if selected
+    // Update everyone tab total
+    if (everyoneData) {
+      everyoneTotal.textContent = `${formatNumber(everyoneData.total_sent + everyoneData.total_received)} messages`;
+      renderYearFilter(everyoneData.years);
+    }
+
+    // Reload current view
     const hash = window.location.hash.slice(1);
-    if (hash && currentContactData) {
+    if (hash === 'everyone' || hash.startsWith('everyone/') || isEveryoneView) {
+      loadEveryoneYear(currentYearFilter);
+    } else if (hash && currentContactData) {
       const contact = contacts.find((c) => c.filename === hash);
       if (contact) {
         const data = await window.electronAPI.contacts.get(contact.filename);
@@ -675,7 +969,15 @@ async function init() {
     const isLoaded = await window.electronAPI.data.isLoaded();
     if (isLoaded) {
       contacts = await window.electronAPI.contacts.list();
+      everyoneData = await window.electronAPI.everyone.get();
       renderContacts();
+
+      // Update everyone tab total
+      if (everyoneData) {
+        everyoneTotal.textContent = `${formatNumber(everyoneData.total_sent + everyoneData.total_received)} messages`;
+        renderYearFilter(everyoneData.years);
+      }
+
       restoreSelection();
     } else {
       await startExport();
@@ -692,7 +994,15 @@ async function startExport() {
 
   if (result.success) {
     contacts = await window.electronAPI.contacts.list();
+    everyoneData = await window.electronAPI.everyone.get();
     renderContacts();
+
+    // Update everyone tab total
+    if (everyoneData) {
+      everyoneTotal.textContent = `${formatNumber(everyoneData.total_sent + everyoneData.total_received)} messages`;
+      renderYearFilter(everyoneData.years);
+    }
+
     hideLoading();
     restoreSelection();
   } else {
@@ -702,7 +1012,20 @@ async function startExport() {
 
 function restoreSelection() {
   const hash = window.location.hash.slice(1);
-  if (hash) {
+  isNavigatingFromPopState = true;
+
+  if (hash === 'everyone' || hash === '') {
+    // Default to Everyone view
+    loadEveryone();
+  } else if (hash.startsWith('everyone/')) {
+    // Everyone view with year filter
+    const year = hash.split('/')[1];
+    if (everyoneData && everyoneData.years.includes(year)) {
+      currentYearFilter = year;
+    }
+    loadEveryone();
+  } else {
+    // Contact view
     const contact = contacts.find((c) => c.filename === hash);
     if (contact) {
       loadContact(contact.filename, contact.name, contact.total, contact.sent, contact.received, contact.first_date || '');
@@ -710,6 +1033,9 @@ function restoreSelection() {
       if (activeItem) {
         activeItem.scrollIntoView({ block: 'nearest' });
       }
+    } else {
+      // Invalid hash, default to Everyone
+      loadEveryone();
     }
   }
 }
