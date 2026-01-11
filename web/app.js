@@ -1557,8 +1557,8 @@ function renderGlobalEmoji(emojiData) {
     return;
   }
 
-  // Show top 5 emojis
-  const topEmoji = emojiData.top.slice(0, 5);
+  // Show top 10 emojis sent
+  const topEmoji = emojiData.top.slice(0, 10);
   grid.innerHTML = topEmoji
     .map(
       (e) =>

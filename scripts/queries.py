@@ -504,10 +504,10 @@ def get_yearly_links(cursor):
 
 
 def get_global_emoji(cursor):
-    """Get top emojis from message text across all 1-on-1 conversations.
+    """Get top emojis sent from message text across all 1-on-1 conversations.
 
     Extracts text from attributedBody when text column is empty (newer macOS).
-    Returns top 10 most used emojis overall.
+    Returns top 10 most used emojis sent.
     """
     from analyzers.emoji import extract_emojis
     from collections import Counter
@@ -520,6 +520,7 @@ def get_global_emoji(cursor):
         JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
         JOIN chat c ON cmj.chat_id = c.ROWID
         WHERE c.style = 45
+          AND m.is_from_me = 1
     """)
 
     all_emojis = []
@@ -547,10 +548,10 @@ def get_global_emoji(cursor):
 
 
 def get_yearly_emoji(cursor):
-    """Get top emojis by year from message text across all 1-on-1 conversations.
+    """Get top emojis sent by year from message text across all 1-on-1 conversations.
 
     Extracts text from attributedBody when text column is empty (newer macOS).
-    Returns top 10 emojis per year.
+    Returns top 10 emojis sent per year.
     """
     from analyzers.emoji import extract_emojis
     from collections import Counter
@@ -564,6 +565,7 @@ def get_yearly_emoji(cursor):
         JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
         JOIN chat c ON cmj.chat_id = c.ROWID
         WHERE c.style = 45
+          AND m.is_from_me = 1
     """)
 
     yearly_emojis = defaultdict(list)
