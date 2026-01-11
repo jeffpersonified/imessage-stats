@@ -23,12 +23,22 @@ APPLE_EPOCH = datetime(2001, 1, 1)
 
 
 def normalize_phone(phone):
-    """Normalize phone number to last 10 digits for matching."""
+    """Normalize phone number for matching.
+
+    Preserves country code to avoid international number collisions.
+    For numbers with 11+ digits starting with country code, keeps the full number.
+    For 10-digit numbers (US/Canada without country code), keeps as-is.
+    """
     if not phone:
         return ""
     digits = re.sub(r"\D", "", phone)
-    if len(digits) >= 10:
-        return digits[-10:]
+    if len(digits) == 11 and digits.startswith("1"):
+        # US/Canada with country code - normalize to 10 digits
+        return digits[1:]
+    if len(digits) == 10:
+        # US/Canada without country code
+        return digits
+    # International or other formats - keep full digits to avoid collisions
     return digits
 
 
@@ -43,14 +53,19 @@ def convert_timestamp(ts):
 
 
 def load_contacts(contacts_dir):
-    """Load contact name mappings from AddressBook databases."""
-    phone_to_name = {}
-    email_to_name = {}
+    """Load contact name and ID mappings from AddressBook databases.
+
+    Returns mappings from phone/email to (name, contact_id) tuples.
+    The contact_id is used to correctly group identifiers belonging to the
+    same contact, avoiding incorrect merges when different people share names.
+    """
+    phone_to_contact = {}  # normalized_phone -> (name, contact_id)
+    email_to_contact = {}  # email -> (name, contact_id)
 
     db_files = glob(os.path.join(contacts_dir, "*/AddressBook-v22.abcddb"))
     if not db_files:
         print(f"Warning: No AddressBook databases found in {contacts_dir}")
-        return phone_to_name, email_to_name
+        return phone_to_contact, email_to_contact
 
     for db_path in db_files:
         try:
@@ -58,53 +73,65 @@ def load_contacts(contacts_dir):
             conn = sqlite3.connect(uri, uri=True)
             cursor = conn.cursor()
 
-            # Phone numbers
+            # Phone numbers - include Z_PK as unique contact identifier
             cursor.execute("""
-                SELECT r.ZFIRSTNAME, r.ZLASTNAME, r.ZORGANIZATION, r.ZNICKNAME, p.ZFULLNUMBER
+                SELECT r.Z_PK, r.ZFIRSTNAME, r.ZLASTNAME, r.ZORGANIZATION, r.ZNICKNAME, p.ZFULLNUMBER
                 FROM ZABCDRECORD r
                 JOIN ZABCDPHONENUMBER p ON p.ZOWNER = r.Z_PK
                 WHERE p.ZFULLNUMBER IS NOT NULL
             """)
-            for first, last, org, nick, phone in cursor.fetchall():
+            for contact_id, first, last, org, nick, phone in cursor.fetchall():
                 name = " ".join(p for p in [first, last] if p) or nick or org
                 if name:
                     normalized = normalize_phone(phone)
-                    if normalized and normalized not in phone_to_name:
-                        phone_to_name[normalized] = name
+                    if normalized and normalized not in phone_to_contact:
+                        phone_to_contact[normalized] = (name, f"{db_path}:{contact_id}")
 
-            # Emails
+            # Emails - include Z_PK as unique contact identifier
             cursor.execute("""
-                SELECT r.ZFIRSTNAME, r.ZLASTNAME, r.ZORGANIZATION, r.ZNICKNAME, e.ZADDRESS
+                SELECT r.Z_PK, r.ZFIRSTNAME, r.ZLASTNAME, r.ZORGANIZATION, r.ZNICKNAME, e.ZADDRESS
                 FROM ZABCDRECORD r
                 JOIN ZABCDEMAILADDRESS e ON e.ZOWNER = r.Z_PK
                 WHERE e.ZADDRESS IS NOT NULL
             """)
-            for first, last, org, nick, email in cursor.fetchall():
+            for contact_id, first, last, org, nick, email in cursor.fetchall():
                 name = " ".join(p for p in [first, last] if p) or nick or org
-                if name and email.lower() not in email_to_name:
-                    email_to_name[email.lower()] = name
+                if name and email.lower() not in email_to_contact:
+                    email_to_contact[email.lower()] = (name, f"{db_path}:{contact_id}")
 
             conn.close()
         except Exception as e:
             print(f"Warning: Could not read {db_path}: {e}")
 
-    return phone_to_name, email_to_name
+    return phone_to_contact, email_to_contact
 
 
-def lookup_name(identifier, phone_to_name, email_to_name):
-    """Look up contact name from phone or email."""
+def lookup_contact(identifier, phone_to_contact, email_to_contact):
+    """Look up contact info (name, contact_id) from phone or email.
+
+    Returns (name, contact_id) tuple or (None, None) if not found.
+    """
     if not identifier:
-        return None
+        return None, None
     if "@" in identifier:
-        return email_to_name.get(identifier.lower())
-    return phone_to_name.get(normalize_phone(identifier))
+        return email_to_contact.get(identifier.lower(), (None, None))
+    return phone_to_contact.get(normalize_phone(identifier), (None, None))
 
 
 def get_monthly_messages(cursor, handle_ids):
-    """Get monthly message counts for a set of handle IDs."""
+    """Get monthly message counts for a set of handle IDs.
+
+    Uses local time for consistent month boundaries with user's timezone.
+    """
+    if not handle_ids:
+        return []
+
     placeholders = ",".join("?" * len(handle_ids))
+    # Use SQLite to compute year-month in local time for consistency
     cursor.execute(f"""
-        SELECT m.date, m.is_from_me
+        SELECT
+            strftime('%Y-%m', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as month,
+            m.is_from_me
         FROM message m
         JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
         JOIN chat c ON cmj.chat_id = c.ROWID
@@ -113,10 +140,8 @@ def get_monthly_messages(cursor, handle_ids):
     """, handle_ids)
 
     monthly = defaultdict(lambda: {"sent": 0, "received": 0})
-    for date_ts, is_from_me in cursor.fetchall():
-        dt = convert_timestamp(date_ts)
-        if dt:
-            month = dt.strftime("%Y-%m")
+    for month, is_from_me in cursor.fetchall():
+        if month:
             if is_from_me:
                 monthly[month]["sent"] += 1
             else:
@@ -129,12 +154,18 @@ def get_monthly_messages(cursor, handle_ids):
 
 
 def get_time_heatmap(cursor, handle_ids):
-    """Get message counts by day of week and hour for a heatmap."""
+    """Get message counts by day of week and hour for a heatmap.
+
+    Uses local time for accurate "when you text" visualization.
+    """
+    if not handle_ids:
+        return [[0] * 24 for _ in range(7)]
+
     placeholders = ",".join("?" * len(handle_ids))
     cursor.execute(f"""
         SELECT
-            CAST(strftime('%w', datetime(m.date/1000000000, 'unixepoch', '+31 years')) AS INTEGER) as day,
-            CAST(strftime('%H', datetime(m.date/1000000000, 'unixepoch', '+31 years')) AS INTEGER) as hour,
+            CAST(strftime('%w', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) AS INTEGER) as day,
+            CAST(strftime('%H', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) AS INTEGER) as hour,
             COUNT(*) as count
         FROM message m
         JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
@@ -155,6 +186,14 @@ def get_time_heatmap(cursor, handle_ids):
 
 def get_attachments(cursor, handle_ids):
     """Get attachment counts by type."""
+    if not handle_ids:
+        return {
+            "photos_sent": 0, "photos_received": 0,
+            "videos_sent": 0, "videos_received": 0,
+            "audio_sent": 0, "audio_received": 0,
+            "gifs_sent": 0, "gifs_received": 0,
+        }
+
     placeholders = ",".join("?" * len(handle_ids))
     cursor.execute(f"""
         SELECT
@@ -196,6 +235,9 @@ def get_attachments(cursor, handle_ids):
 
 def get_response_stats(cursor, handle_ids):
     """Calculate average response times and conversation starter percentage."""
+    if not handle_ids:
+        return {"you_avg_seconds": None, "them_avg_seconds": None, "you_start_pct": None}
+
     placeholders = ",".join("?" * len(handle_ids))
 
     # Get all messages ordered by date
@@ -223,7 +265,12 @@ def get_response_stats(cursor, handle_ids):
     conversations_you_started = 0
     conversations_they_started = 0
 
+    # The first message starts the first conversation
     prev_ts, prev_from_me = messages[0]
+    if prev_from_me:
+        conversations_you_started += 1
+    else:
+        conversations_they_started += 1
 
     for ts, is_from_me in messages[1:]:
         gap = ts - prev_ts
@@ -319,8 +366,8 @@ def main():
         return 1
 
     print("Loading contacts...")
-    phone_to_name, email_to_name = load_contacts(args.contacts)
-    print(f"  Found {len(phone_to_name)} phone and {len(email_to_name)} email mappings")
+    phone_to_contact, email_to_contact = load_contacts(args.contacts)
+    print(f"  Found {len(phone_to_contact)} phone and {len(email_to_contact)} email mappings")
 
     print("Querying iMessage database...")
     uri = f"file:{args.db}?mode=ro"
@@ -329,6 +376,7 @@ def main():
 
     # Query using correct join pattern (through chat relationships)
     # This correctly counts sent messages which have handle_id=0
+    # Fetch all results - we filter and limit after grouping by contact_id
     cursor.execute("""
         SELECT
             h.ROWID as handle_rowid,
@@ -345,39 +393,41 @@ def main():
         WHERE c.style = 45
         GROUP BY h.id
         ORDER BY (sent + received) DESC
-        LIMIT ?
-    """, (args.limit * 2,))  # Get extra to have enough after merging
+    """)
 
     results = cursor.fetchall()
-    print(f"  Found {len(results)} contacts")
+    print(f"  Found {len(results)} handles")
 
-    # Group by name and merge duplicates
+    # Group by contact_id (not name!) to avoid merging different people with same name
     print("Processing contacts...")
-    contacts_by_name = defaultdict(list)
+    contacts_by_id = defaultdict(list)
 
     for handle_rowid, identifier, sent, received, first_ts, last_ts in results:
-        name = lookup_name(identifier, phone_to_name, email_to_name)
-        if not name:
+        name, contact_id = lookup_contact(identifier, phone_to_contact, email_to_contact)
+        if not name or not contact_id:
             continue
 
         first_dt = convert_timestamp(first_ts)
         last_dt = convert_timestamp(last_ts)
 
-        contacts_by_name[name].append({
+        contacts_by_id[contact_id].append({
             "handle_rowid": handle_rowid,
             "identifier": identifier,
+            "name": name,
             "sent": sent,
             "received": received,
             "first_date": first_dt.strftime("%Y-%m-%d") if first_dt else None,
             "last_date": last_dt.strftime("%Y-%m-%d") if last_dt else None,
         })
 
-    # Merge duplicates (prefer phone over email)
+    # Merge multiple identifiers for the same contact (prefer phone over email)
     merged = []
-    for name, entries in contacts_by_name.items():
+    for contact_id, entries in contacts_by_id.items():
         handle_rowids = [e["handle_rowid"] for e in entries]
         phone_entries = [e for e in entries if "@" not in e["identifier"]]
         identifier = phone_entries[0]["identifier"] if phone_entries else entries[0]["identifier"]
+        # All entries for a contact_id share the same name
+        name = entries[0]["name"]
 
         total_sent = sum(e["sent"] for e in entries)
         total_received = sum(e["received"] for e in entries)
