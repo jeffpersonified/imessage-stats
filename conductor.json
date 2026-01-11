@@ -1,0 +1,6 @@
+{
+  "scripts": {
+    "setup": "cp $CONDUCTOR_ROOT_PATH/chat.db . && cp $CONDUCTOR_ROOT_PATH/chat.db-shm . && cp $CONDUCTOR_ROOT_PATH/chat.db-wal . && cp -r $CONDUCTOR_ROOT_PATH/Sources .",
+    "run": "./scripts/start"
+  }
+}
