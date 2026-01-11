@@ -95,7 +95,7 @@ The database ID is in the URL when viewing your database:
 
 ```
 https://notion.so/workspace/DATABASE_ID?v=...
-                         ^^^^^^^^^^^
+                            ^^^^^^^^^^^
 ```
 
 Copy the 32-character ID (the part before `?v=`).
