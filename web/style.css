@@ -370,6 +370,7 @@ section p {
   padding: 6px 12px;
   cursor: pointer;
   transition: all 0.1s;
+  outline: none;
 }
 
 .year-filter-grid button:hover {

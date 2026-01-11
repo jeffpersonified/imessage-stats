@@ -814,6 +814,10 @@ document.addEventListener('keydown', (e) => {
     const newHash = newYear === 'all' ? '#everyone' : `#everyone/${newYear}`;
     history.pushState(null, '', newHash);
     loadEveryoneYear(newYear);
+
+    // Focus the newly active button
+    const activeBtn = yearFilterGrid.querySelector('button.active');
+    if (activeBtn) activeBtn.focus();
     return;
   }
 
