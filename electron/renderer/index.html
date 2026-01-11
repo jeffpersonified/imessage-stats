@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'">
+  <title>iMessage Stats</title>
+</head>
+<body>
+  <!-- Onboarding overlay -->
+  <div id="onboarding" class="onboarding" style="display: none;">
+    <div class="onboarding-content">
+      <h1>iMessage Stats</h1>
+      <p class="onboarding-desc">Analyze your iMessage history and discover messaging patterns.</p>
+
+      <div id="permission-status" class="permission-box">
+        <div class="permission-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        <h2>Full Disk Access Required</h2>
+        <p>To read your message history, this app needs Full Disk Access permission.</p>
+        <ol class="permission-steps">
+          <li>Click the button below to open System Settings</li>
+          <li>Find "iMessage Stats" in the list</li>
+          <li>Toggle the switch to enable access</li>
+          <li>Return to this app</li>
+        </ol>
+        <button id="open-settings" class="btn-primary">Open System Settings</button>
+        <p class="permission-note">Your data never leaves your computer.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading overlay -->
+  <div id="loading" class="loading-overlay" style="display: none;">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <p id="loading-message">Loading...</p>
+      <div class="progress-bar">
+        <div id="loading-progress" class="progress-fill"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main app -->
+  <aside class="sidebar">
+    <div id="everyone-tab" class="everyone-tab">
+      <div class="tab-name">iMessage Stats</div>
+      <div class="tab-meta" id="everyone-total"></div>
+    </div>
+    <div class="sidebar-header">
+      <input type="text" id="search" placeholder="Search...">
+    </div>
+    <ul id="contact-list"></ul>
+  </aside>
+
+  <main class="content">
+    <div id="welcome">
+      <span>select a contact</span>
+    </div>
+
+    <header id="contact-header" class="header" style="display: none;">
+      <h1 id="contact-name"></h1>
+      <span class="since" id="texting-since"></span>
+    </header>
+
+    <div id="chart-container" style="display: none;">
+      <section id="year-filter-section" class="year-filter-section" style="display: none;">
+        <div id="year-filter" class="year-filter-grid"></div>
+      </section>
+
+      <section class="stats">
+        <div class="stat-col">
+          <p id="stat-total"></p>
+          <p class="stat-detail" id="stat-total-detail"></p>
+        </div>
+        <div class="stat-col">
+          <p id="stat-sent"></p>
+          <p class="stat-detail" id="stat-sent-detail"></p>
+        </div>
+        <div class="stat-col">
+          <p id="stat-received"></p>
+          <p class="stat-detail" id="stat-received-detail"></p>
+        </div>
+      </section>
+
+      <section class="patterns">
+        <p id="convo-starter"></p>
+        <p id="response-time"></p>
+      </section>
+
+      <section id="top-contacts-section" class="top-contacts-section" style="display: none;">
+        <h2>Top contacts in <span id="top-contacts-year"></span></h2>
+        <div id="top-contacts" class="top-contacts-grid"></div>
+      </section>
+
+      <section id="busiest-month-section" style="display: none;">
+        <p id="busiest-month"></p>
+      </section>
+
+      <section class="heatmap-section">
+        <div class="section-header">
+          <p id="heatmap-label"></p>
+        </div>
+        <div class="heatmap-wrapper">
+          <div class="heatmap-days">
+            <span>Sun</span>
+            <span>Mon</span>
+            <span>Tue</span>
+            <span>Wed</span>
+            <span>Thu</span>
+            <span>Fri</span>
+            <span>Sat</span>
+          </div>
+          <div class="heatmap-grid">
+            <canvas id="heatmap"></canvas>
+            <div id="heatmap-tooltip"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="chart-section">
+        <div class="section-header">
+          <h2>Messages sent over time</h2>
+          <div class="toggle">
+            <button data-view="year">Year</button>
+            <button data-view="month" class="active">Month</button>
+          </div>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chart"></canvas>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
