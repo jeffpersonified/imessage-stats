@@ -64,7 +64,7 @@ def _analyze_contact_worker(args):
     # Import analyzers lazily in worker process
     from analyzers import (
         analyze_temperature, analyze_links, analyze_profanity,
-        analyze_semantic_topics
+        analyze_laughter, analyze_semantic_topics
     )
 
     # "keywords" uses semantic topics (embeddings + clustering + optional LLM)
@@ -72,6 +72,7 @@ def _analyze_contact_worker(args):
         "temperature": analyze_temperature,
         "links": analyze_links,
         "profanity": analyze_profanity,
+        "laughter": analyze_laughter,
         "keywords": analyze_semantic_topics,
     }
 

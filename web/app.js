@@ -71,6 +71,7 @@ const statReceived = document.getElementById('stat-received');
 const toggleButtons = document.querySelectorAll('.toggle button');
 const convoStarterEl = document.getElementById('convo-starter');
 const responseTimeEl = document.getElementById('response-time');
+const laughComparisonEl = document.getElementById('laugh-comparison');
 const swearComparisonEl = document.getElementById('swear-comparison');
 const statTotalDetail = document.getElementById('stat-total-detail');
 const statSentDetail = document.getElementById('stat-sent-detail');
@@ -335,6 +336,46 @@ function renderPatterns(data, year = 'all') {
     responseTimeEl.innerHTML = `<span class="them">${name}</span> ${verb} in about ${themTime}`;
   } else {
     responseTimeEl.textContent = '';
+  }
+
+  // Laughter comparison (who makes the other person laugh more)
+  // sent = laughs in YOUR messages (they made you laugh)
+  // received = laughs in THEIR messages (you made them laugh)
+  const laughterData = data.analysis?.laughter;
+  if (laughterData) {
+    const yearData = laughterData[year] || laughterData.all || {};
+    const theyMadeYouLaugh = yearData.sent || 0;
+    const youMadeThemLaugh = yearData.received || 0;
+    const topSent = yearData.top_sent;      // Your most common laugh
+    const topReceived = yearData.top_received;  // Their most common laugh
+
+    if (theyMadeYouLaugh > 0 || youMadeThemLaugh > 0) {
+      let mainText = '';
+      let detailText = '';
+
+      if (youMadeThemLaugh > theyMadeYouLaugh) {
+        const verb = usePastTense ? 'made' : 'make';
+        mainText = `<span class="you">You</span> ${verb} <span class="them">${name}</span> laugh more often`;
+        if (topReceived) {
+          detailText = `. Big "${topReceived}" energy`;
+        }
+      } else if (theyMadeYouLaugh > youMadeThemLaugh) {
+        const verb = usePastTense ? 'made' : 'makes';
+        mainText = `<span class="them">${name}</span> ${verb} you laugh more often`;
+        if (topSent) {
+          detailText = `. Big "${topSent}" energy`;
+        }
+      } else {
+        const verb = usePastTense ? 'made' : 'make';
+        mainText = `You both ${verb} each other laugh equally`;
+      }
+
+      laughComparisonEl.innerHTML = mainText + detailText;
+    } else {
+      laughComparisonEl.textContent = '';
+    }
+  } else {
+    laughComparisonEl.textContent = '';
   }
 
   // Profanity comparison (who swears more)
