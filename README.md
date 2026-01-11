@@ -24,7 +24,7 @@ Choose one of two installation methods:
 
 The easiest way to use iMessage Stats is with the native Mac app.
 
-1. **Download** the latest release from [Releases](https://github.com/jeffpersonified/imessage-stats/releases)
+1. **[Download iMessage Stats](https://github.com/jeffpersonified/imessage-stats/releases/download/v1.0.0/iMessage.Stats-1.0.0-arm64.dmg)** (macOS, Apple Silicon)
 2. **Open** the DMG and drag iMessage Stats to Applications
 3. **Launch** the app and grant Full Disk Access when prompted
 
