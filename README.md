@@ -1,6 +1,6 @@
 # iMessage Stats
 
-Analyze your iMessage history to see who you text the most. Visualize messaging patterns over time.
+Fork of Brian Lovin's [iMessage Stats](https://github.com/brianlovin/imessage-stats) to analyze your iMessage history and see who you text the most and visualize messaging patterns over time.
 
 ![iMessage Stats](cover.png)
 
