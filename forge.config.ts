@@ -13,7 +13,9 @@ const canNotarize = !!(process.env.APPLE_ID && process.env.APPLE_PASSWORD && pro
 
 const config: ForgeConfig = {
   packagerConfig: {
-    asar: true,
+    asar: {
+      unpack: '**/{*.node,better-sqlite3/**/*}',
+    },
     name: 'iMessage Stats',
     appBundleId: 'com.imessage-stats.app',
     icon: './resources/icon',
