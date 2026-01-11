@@ -204,7 +204,7 @@ body {
 
 /* Sections */
 section {
-  margin-bottom: 32px;
+  margin-bottom: 48px;
 }
 
 section h2 {
@@ -318,4 +318,125 @@ section p {
 #chart {
   width: 100%;
   height: 100%;
+}
+
+/* Everyone tab */
+.everyone-tab {
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.1s;
+}
+
+.everyone-tab:hover {
+  background: #1a1a1a;
+}
+
+.everyone-tab.active {
+  background: #1a1a1a;
+}
+
+.everyone-tab.active .tab-name {
+  color: var(--accent);
+}
+
+.tab-name {
+  color: var(--text-bright);
+  margin-bottom: 2px;
+}
+
+.tab-meta {
+  font-size: 11px;
+  color: #444;
+}
+
+/* Year filter buttons */
+.year-filter-section {
+  margin-bottom: 40px;
+}
+
+.year-filter-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.year-filter-grid button {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.year-filter-grid button:hover {
+  border-color: #444;
+  color: var(--text-bright);
+}
+
+.year-filter-grid button.active {
+  background: var(--bg-alt);
+  border-color: #444;
+  color: var(--accent);
+}
+
+/* Top contacts grid */
+.top-contacts-section h2 {
+  margin-bottom: 16px;
+}
+
+.top-contacts-section h2 span {
+  color: var(--accent);
+}
+
+.top-contacts-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 1000px) {
+  .top-contacts-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.top-contact-card {
+  padding: 12px;
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.1s;
+}
+
+.top-contact-card:hover {
+  border-color: #444;
+}
+
+.top-contact-rank {
+  color: #444;
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+
+.top-contact-name {
+  color: var(--text-bright);
+  margin-bottom: 4px;
+}
+
+.top-contact-count {
+  color: var(--text);
+  font-size: 11px;
+}
+
+/* Busiest month */
+#busiest-month-section p {
+  color: var(--text);
+}
+
+#busiest-month-section span {
+  color: var(--accent);
 }

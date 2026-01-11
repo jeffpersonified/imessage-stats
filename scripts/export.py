@@ -305,6 +305,288 @@ def get_response_stats(cursor, handle_ids):
     }
 
 
+def get_global_stats(cursor):
+    """Get total message counts across all 1-on-1 conversations."""
+    cursor.execute("""
+        SELECT
+            SUM(CASE WHEN m.is_from_me = 1 THEN 1 ELSE 0 END) as total_sent,
+            SUM(CASE WHEN m.is_from_me = 0 THEN 1 ELSE 0 END) as total_received,
+            MIN(m.date) as first_msg,
+            MAX(m.date) as last_msg
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+    """)
+    row = cursor.fetchone()
+    if not row:
+        return {"total_sent": 0, "total_received": 0, "first_date": None, "last_date": None}
+
+    first_dt = convert_timestamp(row[2])
+    last_dt = convert_timestamp(row[3])
+    return {
+        "total_sent": row[0] or 0,
+        "total_received": row[1] or 0,
+        "first_date": first_dt.strftime("%Y-%m-%d") if first_dt else None,
+        "last_date": last_dt.strftime("%Y-%m-%d") if last_dt else None,
+    }
+
+
+def get_global_monthly(cursor):
+    """Get monthly message counts across all 1-on-1 conversations."""
+    cursor.execute("""
+        SELECT
+            strftime('%Y-%m', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as month,
+            SUM(CASE WHEN m.is_from_me = 1 THEN 1 ELSE 0 END) as sent,
+            SUM(CASE WHEN m.is_from_me = 0 THEN 1 ELSE 0 END) as received
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+        GROUP BY month
+        ORDER BY month
+    """)
+    return [
+        {"month": month, "sent": sent, "received": received}
+        for month, sent, received in cursor.fetchall()
+        if month
+    ]
+
+
+def get_global_heatmap(cursor):
+    """Get message counts by day of week and hour across all 1-on-1 conversations."""
+    cursor.execute("""
+        SELECT
+            CAST(strftime('%w', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) AS INTEGER) as day,
+            CAST(strftime('%H', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) AS INTEGER) as hour,
+            COUNT(*) as count
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+        GROUP BY day, hour
+    """)
+    heatmap = [[0] * 24 for _ in range(7)]
+    for day, hour, count in cursor.fetchall():
+        if day is not None and hour is not None:
+            heatmap[day][hour] = count
+    return heatmap
+
+
+def get_global_attachments(cursor):
+    """Get attachment counts by type across all 1-on-1 conversations."""
+    cursor.execute("""
+        SELECT
+            a.mime_type,
+            m.is_from_me,
+            COUNT(*) as count
+        FROM attachment a
+        JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
+        JOIN message m ON maj.message_id = m.ROWID
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+        GROUP BY a.mime_type, m.is_from_me
+    """)
+
+    attachments = {
+        "photos_sent": 0, "photos_received": 0,
+        "videos_sent": 0, "videos_received": 0,
+        "audio_sent": 0, "audio_received": 0,
+        "gifs_sent": 0, "gifs_received": 0,
+    }
+
+    for mime_type, is_from_me, count in cursor.fetchall():
+        if not mime_type:
+            continue
+        direction = "sent" if is_from_me else "received"
+        if mime_type.startswith("image/gif"):
+            attachments[f"gifs_{direction}"] += count
+        elif mime_type.startswith("image/"):
+            attachments[f"photos_{direction}"] += count
+        elif mime_type.startswith("video/"):
+            attachments[f"videos_{direction}"] += count
+        elif mime_type.startswith("audio/"):
+            attachments[f"audio_{direction}"] += count
+
+    return attachments
+
+
+def get_yearly_top_identifiers(cursor, top_n=8):
+    """Get identifiers that appear in any year's top N by message count.
+
+    Returns a set of identifiers that should be exported even if not in the
+    overall top contacts, so they can appear in yearly top contact lists.
+    """
+    cursor.execute("""
+        WITH yearly_ranked AS (
+            SELECT
+                strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
+                h.id as identifier,
+                COUNT(*) as total,
+                ROW_NUMBER() OVER (
+                    PARTITION BY strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime'))
+                    ORDER BY COUNT(*) DESC
+                ) as rank
+            FROM message m
+            JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+            JOIN chat c ON cmj.chat_id = c.ROWID
+            JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
+            JOIN handle h ON chj.handle_id = h.ROWID
+            WHERE c.style = 45
+            GROUP BY year, h.id
+        )
+        SELECT DISTINCT identifier
+        FROM yearly_ranked
+        WHERE rank <= ? AND year IS NOT NULL
+    """, (top_n,))
+    return set(row[0] for row in cursor.fetchall())
+
+
+def get_yearly_data(cursor, global_monthly, contacts_export):
+    """Get per-year statistics including top contacts and busiest month."""
+    # Build a lookup from identifier to contact export data
+    contact_by_identifier = {}
+    for c in contacts_export:
+        contact_by_identifier[c["identifier"]] = c
+
+    # Query yearly message counts per identifier
+    cursor.execute("""
+        SELECT
+            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
+            h.id as identifier,
+            SUM(CASE WHEN m.is_from_me = 1 THEN 1 ELSE 0 END) as sent,
+            SUM(CASE WHEN m.is_from_me = 0 THEN 1 ELSE 0 END) as received
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        JOIN chat_handle_join chj ON c.ROWID = chj.chat_id
+        JOIN handle h ON chj.handle_id = h.ROWID
+        WHERE c.style = 45
+        GROUP BY year, h.id
+    """)
+
+    # Group by year
+    yearly_contacts = defaultdict(list)
+    for year, identifier, sent, received in cursor.fetchall():
+        if year:
+            yearly_contacts[year].append({
+                "identifier": identifier,
+                "sent": sent,
+                "received": received,
+                "total": sent + received,
+            })
+
+    # Query yearly heatmaps
+    cursor.execute("""
+        SELECT
+            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
+            CAST(strftime('%w', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) AS INTEGER) as day,
+            CAST(strftime('%H', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) AS INTEGER) as hour,
+            COUNT(*) as count
+        FROM message m
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+        GROUP BY year, day, hour
+    """)
+
+    yearly_heatmaps = defaultdict(lambda: [[0] * 24 for _ in range(7)])
+    for year, day, hour, count in cursor.fetchall():
+        if year and day is not None and hour is not None:
+            yearly_heatmaps[year][day][hour] = count
+
+    # Query yearly attachments
+    cursor.execute("""
+        SELECT
+            strftime('%Y', datetime(m.date/1000000000, 'unixepoch', '+31 years', 'localtime')) as year,
+            a.mime_type,
+            m.is_from_me,
+            COUNT(*) as count
+        FROM attachment a
+        JOIN message_attachment_join maj ON a.ROWID = maj.attachment_id
+        JOIN message m ON maj.message_id = m.ROWID
+        JOIN chat_message_join cmj ON m.ROWID = cmj.message_id
+        JOIN chat c ON cmj.chat_id = c.ROWID
+        WHERE c.style = 45
+        GROUP BY year, a.mime_type, m.is_from_me
+    """)
+
+    yearly_attachments = defaultdict(lambda: {
+        "photos_sent": 0, "photos_received": 0,
+        "videos_sent": 0, "videos_received": 0,
+        "audio_sent": 0, "audio_received": 0,
+        "gifs_sent": 0, "gifs_received": 0,
+    })
+    for year, mime_type, is_from_me, count in cursor.fetchall():
+        if not year or not mime_type:
+            continue
+        direction = "sent" if is_from_me else "received"
+        if mime_type.startswith("image/gif"):
+            yearly_attachments[year][f"gifs_{direction}"] += count
+        elif mime_type.startswith("image/"):
+            yearly_attachments[year][f"photos_{direction}"] += count
+        elif mime_type.startswith("video/"):
+            yearly_attachments[year][f"videos_{direction}"] += count
+        elif mime_type.startswith("audio/"):
+            yearly_attachments[year][f"audio_{direction}"] += count
+
+    # Group global monthly by year
+    monthly_by_year = defaultdict(list)
+    for m in global_monthly:
+        year = m["month"][:4]
+        monthly_by_year[year].append(m)
+
+    # Build yearly data
+    by_year = {}
+    for year in sorted(yearly_contacts.keys(), reverse=True):
+        # Get top 8 contacts that exist in our export
+        contacts_for_year = yearly_contacts[year]
+        contacts_for_year.sort(key=lambda x: x["total"], reverse=True)
+
+        top_contacts = []
+        for c in contacts_for_year:
+            if len(top_contacts) >= 8:
+                break
+            # Check if this identifier is in our exported contacts
+            exported = contact_by_identifier.get(c["identifier"])
+            if exported:
+                top_contacts.append({
+                    "rank": len(top_contacts) + 1,
+                    "name": exported["name"],
+                    "filename": exported["filename"],
+                    "total": c["total"],
+                    "sent": c["sent"],
+                    "received": c["received"],
+                })
+
+        # Calculate yearly totals
+        year_monthly = monthly_by_year.get(year, [])
+        year_sent = sum(m["sent"] for m in year_monthly)
+        year_received = sum(m["received"] for m in year_monthly)
+
+        # Find busiest month
+        busiest_month = None
+        if year_monthly:
+            busiest = max(year_monthly, key=lambda m: m["sent"] + m["received"])
+            busiest_month = {
+                "month": busiest["month"],
+                "total": busiest["sent"] + busiest["received"],
+            }
+
+        by_year[year] = {
+            "sent": year_sent,
+            "received": year_received,
+            "monthly": year_monthly,
+            "time_heatmap": yearly_heatmaps[year],
+            "attachments": yearly_attachments[year],
+            "top_contacts": top_contacts,
+            "busiest_month": busiest_month,
+        }
+
+    return by_year
+
+
 def slugify(text):
     """Convert text to URL-friendly slug."""
     # Lowercase and replace spaces with hyphens
@@ -479,6 +761,14 @@ def main():
     # Sort and limit
     merged.sort(key=lambda x: x["total"], reverse=True)
     top_contacts = merged[:args.limit]
+    top_identifiers = {c["identifier"] for c in top_contacts}
+
+    # Find additional contacts needed for yearly top 8 views
+    yearly_top_identifiers = get_yearly_top_identifiers(cursor, top_n=8)
+    additional_identifiers = yearly_top_identifiers - top_identifiers
+
+    # Find additional contacts from merged list
+    additional_contacts = [c for c in merged if c["identifier"] in additional_identifiers]
 
     # Create output directory
     output_dir = Path(args.output)
@@ -487,7 +777,12 @@ def main():
 
     # Export contacts.json
     print(f"Exporting {len(top_contacts)} contacts...")
+    if additional_contacts:
+        print(f"  Plus {len(additional_contacts)} additional contacts for yearly top 8")
+
     contacts_export = []
+
+    # Export top contacts (appear in sidebar)
     for i, contact in enumerate(top_contacts):
         filename = safe_filename(contact["name"], contact["identifier"])
         contacts_export.append({
@@ -514,12 +809,66 @@ def main():
         with open(messages_dir / f"{filename}.json", "w") as f:
             json.dump(contact_data, f)
 
+    # Export additional contacts (don't appear in sidebar, only accessible via yearly top 8)
+    for contact in additional_contacts:
+        filename = safe_filename(contact["name"], contact["identifier"])
+        contacts_export.append({
+            "name": contact["name"],
+            "identifier": contact["identifier"],
+            "filename": filename,
+            "sent": contact["sent"],
+            "received": contact["received"],
+            "total": contact["total"],
+            "first_date": contact["first_date"],
+            "last_date": contact["last_date"],
+            "sidebar": False,  # Don't show in sidebar
+        })
+
+        # Export detailed contact data
+        handle_ids = contact["handle_rowids"]
+        contact_data = {
+            "name": contact["name"],
+            "monthly": get_monthly_messages(cursor, handle_ids),
+            "time_heatmap": get_time_heatmap(cursor, handle_ids),
+            "attachments": get_attachments(cursor, handle_ids),
+            "response_stats": get_response_stats(cursor, handle_ids),
+        }
+        with open(messages_dir / f"{filename}.json", "w") as f:
+            json.dump(contact_data, f)
+
     with open(output_dir / "contacts.json", "w") as f:
         json.dump(contacts_export, f, indent=2)
 
+    # Export global "Everyone" statistics
+    print("Exporting global statistics...")
+    global_stats = get_global_stats(cursor)
+    global_monthly = get_global_monthly(cursor)
+    global_heatmap = get_global_heatmap(cursor)
+    global_attachments = get_global_attachments(cursor)
+    yearly_data = get_yearly_data(cursor, global_monthly, contacts_export)
+
+    years = sorted(yearly_data.keys(), reverse=True)
+
+    everyone_data = {
+        "total_sent": global_stats["total_sent"],
+        "total_received": global_stats["total_received"],
+        "first_date": global_stats["first_date"],
+        "last_date": global_stats["last_date"],
+        "years": years,
+        "monthly": global_monthly,
+        "time_heatmap": global_heatmap,
+        "attachments": global_attachments,
+        "by_year": yearly_data,
+    }
+
+    with open(output_dir / "everyone.json", "w") as f:
+        json.dump(everyone_data, f)
+
     conn.close()
 
-    print(f"\nDone! Exported {len(top_contacts)} contacts to {output_dir}")
+    total_messages = global_stats["total_sent"] + global_stats["total_received"]
+    total_exported = len(top_contacts) + len(additional_contacts)
+    print(f"\nDone! Exported {total_exported} contacts and global stats ({total_messages:,} total messages) to {output_dir}")
 
 
 if __name__ == "__main__":

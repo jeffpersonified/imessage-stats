@@ -1,6 +1,5 @@
 # Generated data (contains personal information)
-web/data/contacts.json
-web/data/messages/
+web/data/
 
 # User's copied databases (contains personal information)
 chat.db

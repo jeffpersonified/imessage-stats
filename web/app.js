@@ -4,6 +4,10 @@ let chart = null;
 let currentContactData = null;
 let currentView = 'month';
 let currentFirstName = '';
+let everyoneData = null;
+let currentYearFilter = 'all';
+let isEveryoneView = false;
+let isNavigatingFromPopState = false; // Flag to avoid duplicate history entries
 
 // Fake names for screenshots (use with ./scripts/start --fake)
 const FAKE_MODE = new URLSearchParams(window.location.search).has('fake');
@@ -64,6 +68,17 @@ const statReceivedDetail = document.getElementById('stat-received-detail');
 const heatmapCanvas = document.getElementById('heatmap');
 const heatmapTooltip = document.getElementById('heatmap-tooltip');
 const heatmapLabel = document.getElementById('heatmap-label');
+const everyoneTab = document.getElementById('everyone-tab');
+const everyoneTotal = document.getElementById('everyone-total');
+const yearFilterSection = document.getElementById('year-filter-section');
+const yearFilterGrid = document.getElementById('year-filter');
+const topContactsSection = document.getElementById('top-contacts-section');
+const topContactsYear = document.getElementById('top-contacts-year');
+const topContactsGrid = document.getElementById('top-contacts');
+const busiestMonthSection = document.getElementById('busiest-month-section');
+const busiestMonthEl = document.getElementById('busiest-month');
+const patternsSection = document.querySelector('.patterns');
+const chartToggle = document.querySelector('.chart-section .toggle');
 
 // Heatmap state for hover
 let currentHeatmapData = null;
@@ -98,7 +113,7 @@ function aggregateToYearly(monthly) {
 // Render contact list
 function renderContacts(filter = '') {
   const filtered = contacts.filter(c =>
-    c.name.toLowerCase().includes(filter.toLowerCase())
+    c.sidebar !== false && c.name.toLowerCase().includes(filter.toLowerCase())
   );
 
   contactList.innerHTML = filtered.map(c => `
@@ -106,7 +121,7 @@ function renderContacts(filter = '') {
         data-total="${c.total}" data-sent="${c.sent}" data-received="${c.received}"
         data-first="${c.first_date || ''}">
       <div class="contact-name">${c.name}</div>
-      <div class="contact-meta">${formatNumber(c.total)}</div>
+      <div class="contact-meta">${formatNumber(c.total)} messages</div>
     </li>
   `).join('');
 }
@@ -121,13 +136,27 @@ function formatSinceDate(dateStr) {
 
 // Load and display data for a contact
 async function loadContact(filename, name, total, sent, received, firstDate) {
+  isEveryoneView = false;
+
   // Update URL hash for persistence
-  history.replaceState(null, '', `#${filename}`);
+  if (isNavigatingFromPopState) {
+    isNavigatingFromPopState = false;
+  } else {
+    history.pushState(null, '', `#${filename}`);
+  }
 
   // Update active state
+  everyoneTab.classList.remove('active');
   document.querySelectorAll('#contact-list li').forEach(li => {
     li.classList.toggle('active', li.dataset.filename === filename);
   });
+
+  // Hide Everyone-specific elements, show contact-specific
+  yearFilterSection.style.display = 'none';
+  topContactsSection.style.display = 'none';
+  busiestMonthSection.style.display = 'none';
+  patternsSection.style.display = 'block';
+  chartToggle.style.display = 'flex';
 
   // Update header and extract first name
   contactNameEl.textContent = name;
@@ -507,6 +536,9 @@ function renderChart() {
             maxRotation: 45,
             minRotation: 45,
             callback: function(value, index) {
+              // Hide all labels for single year on aggregate view
+              if (isEveryoneView && currentYearFilter !== 'all') return null;
+
               // In year view, show all labels
               if (currentView === 'year') return this.getLabelForValue(value);
 
@@ -541,6 +573,175 @@ function renderChart() {
   });
 }
 
+// Render year filter buttons
+function renderYearFilter(years) {
+  yearFilterGrid.innerHTML = '<button data-year="all" class="active">All time</button>' +
+    years.map(y => `<button data-year="${y}">${y}</button>`).join('');
+}
+
+// Update active state on year filter buttons
+function updateYearFilterActive(year) {
+  yearFilterGrid.querySelectorAll('button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.year === year);
+  });
+}
+
+// Format month as "January 2024"
+function formatMonthLong(monthStr) {
+  const [year, month] = monthStr.split('-');
+  return new Date(year, month - 1).toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric'
+  });
+}
+
+// Render top contacts grid
+function renderTopContacts(topContacts) {
+  topContactsGrid.innerHTML = topContacts.map(c => `
+    <div class="top-contact-card" data-filename="${c.filename}">
+      <div class="top-contact-rank">#${c.rank}</div>
+      <div class="top-contact-name">${c.name}</div>
+      <div class="top-contact-count">${formatNumber(c.total)} messages</div>
+    </div>
+  `).join('');
+}
+
+// Load Everyone view
+async function loadEveryone() {
+  isEveryoneView = true;
+
+  // Update URL hash (only push to history if not from popstate)
+  const newHash = currentYearFilter === 'all' ? '#everyone' : `#everyone/${currentYearFilter}`;
+  if (isNavigatingFromPopState) {
+    isNavigatingFromPopState = false;
+  } else {
+    history.pushState(null, '', newHash);
+  }
+
+  // Update active states
+  everyoneTab.classList.add('active');
+  document.querySelectorAll('#contact-list li').forEach(li => {
+    li.classList.remove('active');
+  });
+
+  // Show/hide appropriate sections
+  welcome.style.display = 'none';
+  document.getElementById('contact-header').style.display = 'block';
+  chartContainer.style.display = 'block';
+  yearFilterSection.style.display = 'block';
+  patternsSection.style.display = 'none'; // No response stats for global
+
+  // Fetch everyone data if not loaded
+  if (!everyoneData) {
+    try {
+      const response = await fetch('data/everyone.json');
+      everyoneData = await response.json();
+      renderYearFilter(everyoneData.years);
+      everyoneTotal.textContent = `${formatNumber(everyoneData.total_sent + everyoneData.total_received)} messages`;
+    } catch (err) {
+      console.error('Failed to load everyone data:', err);
+      return;
+    }
+  }
+
+  // Apply current year filter
+  loadEveryoneYear(currentYearFilter);
+}
+
+// Load Everyone view for a specific year (does not modify history)
+function loadEveryoneYear(year) {
+  currentYearFilter = year;
+  updateYearFilterActive(year);
+
+  let data, sent, received, firstDate, monthly, heatmap;
+
+  if (year === 'all') {
+    sent = everyoneData.total_sent;
+    received = everyoneData.total_received;
+    firstDate = null; // Don't show "texting since" on aggregation view
+    monthly = everyoneData.monthly;
+    heatmap = everyoneData.time_heatmap;
+    data = everyoneData;
+
+    // Hide year-specific sections
+    topContactsSection.style.display = 'none';
+    busiestMonthSection.style.display = 'none';
+
+    // Show month/year toggle for all-time view
+    chartToggle.style.display = 'flex';
+  } else {
+    const yearData = everyoneData.by_year[year];
+    if (!yearData) return;
+
+    sent = yearData.sent;
+    received = yearData.received;
+    firstDate = null; // Don't show "texting since" for year filter
+    monthly = yearData.monthly;
+    heatmap = yearData.time_heatmap;
+    data = yearData;
+
+    // Show top contacts for this year
+    if (yearData.top_contacts && yearData.top_contacts.length > 0) {
+      // Apply fake names if in fake mode
+      let displayContacts = yearData.top_contacts;
+      if (FAKE_MODE) {
+        displayContacts = yearData.top_contacts.map((c, i) => ({
+          ...c,
+          name: fakeNames[i] || c.name
+        }));
+      }
+      topContactsYear.textContent = year;
+      renderTopContacts(displayContacts);
+      topContactsSection.style.display = 'block';
+    } else {
+      topContactsSection.style.display = 'none';
+    }
+
+    // Show busiest month
+    if (yearData.busiest_month) {
+      busiestMonthEl.innerHTML = `Your busiest month was <span>${formatMonthLong(yearData.busiest_month.month)}</span> with ${formatNumber(yearData.busiest_month.total)} messages`;
+      busiestMonthSection.style.display = 'block';
+    } else {
+      busiestMonthSection.style.display = 'none';
+    }
+
+    // Hide month/year toggle for single year (only month view makes sense)
+    chartToggle.style.display = 'none';
+    // Reset to month view if currently on year view
+    if (currentView === 'year') {
+      currentView = 'month';
+      toggleButtons.forEach(b => b.classList.toggle('active', b.dataset.view === 'month'));
+    }
+  }
+
+  // Update header
+  contactNameEl.textContent = 'iMessage Stats';
+  const sinceEl = document.getElementById('texting-since');
+  if (firstDate) {
+    sinceEl.textContent = `Texting since ${formatSinceDate(firstDate)}`;
+  } else {
+    sinceEl.textContent = '';
+  }
+
+  // Update stats
+  const total = sent + received;
+  statTotal.innerHTML = `<span class="num">${formatNumber(total)}</span> messages`;
+  statSent.innerHTML = `<span class="sent">${formatNumber(sent)}</span> sent`;
+  statReceived.innerHTML = `<span class="received">${formatNumber(received)}</span> received`;
+
+  // Update attachment details
+  if (year === 'all') {
+    renderAttachmentDetails(everyoneData.attachments);
+  } else {
+    renderAttachmentDetails(everyoneData.by_year[year].attachments);
+  }
+
+  // Update chart and heatmap
+  currentContactData = { monthly };
+  renderChart();
+  renderHeatmap(heatmap);
+}
+
 // Event listeners
 contactList.addEventListener('click', (e) => {
   const li = e.target.closest('li');
@@ -560,37 +761,102 @@ searchInput.addEventListener('input', (e) => {
   renderContacts(e.target.value);
 });
 
-// Keyboard navigation for contacts list
+// Everyone tab click
+everyoneTab.addEventListener('click', () => {
+  currentYearFilter = 'all';
+  loadEveryone();
+});
+
+// Year filter button click
+yearFilterGrid.addEventListener('click', (e) => {
+  const btn = e.target.closest('button');
+  if (btn) {
+    const year = btn.dataset.year;
+    const newHash = year === 'all' ? '#everyone' : `#everyone/${year}`;
+    history.pushState(null, '', newHash);
+    loadEveryoneYear(year);
+  }
+});
+
+// Top contacts card click
+topContactsGrid.addEventListener('click', (e) => {
+  const card = e.target.closest('.top-contact-card');
+  if (card) {
+    const filename = card.dataset.filename;
+    const contact = contacts.find(c => c.filename === filename);
+    if (contact) {
+      loadContact(contact.filename, contact.name, contact.total, contact.sent, contact.received, contact.first_date);
+    }
+  }
+});
+
+// Keyboard navigation for contacts list (includes Everyone tab)
 document.addEventListener('keydown', (e) => {
-  // Only handle arrow keys when not typing in search
-  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  // Skip if typing in search
   if (document.activeElement === searchInput && searchInput.value) return;
+
+  // Left/right arrows for year filter navigation on aggregate view
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && isEveryoneView && everyoneData) {
+    e.preventDefault();
+
+    // Build year options array: ['all', '2026', '2025', ...]
+    const yearOptions = ['all', ...everyoneData.years];
+    let currentIndex = yearOptions.indexOf(currentYearFilter);
+    if (currentIndex === -1) currentIndex = 0;
+
+    if (e.key === 'ArrowLeft') {
+      currentIndex = currentIndex > 0 ? currentIndex - 1 : yearOptions.length - 1;
+    } else {
+      currentIndex = currentIndex < yearOptions.length - 1 ? currentIndex + 1 : 0;
+    }
+
+    const newYear = yearOptions[currentIndex];
+    const newHash = newYear === 'all' ? '#everyone' : `#everyone/${newYear}`;
+    history.pushState(null, '', newHash);
+    loadEveryoneYear(newYear);
+    return;
+  }
+
+  // Up/down arrows for contact navigation
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
 
   e.preventDefault();
 
   const items = Array.from(contactList.querySelectorAll('li'));
-  if (items.length === 0) return;
-
-  const activeItem = contactList.querySelector('li.active');
-  let currentIndex = activeItem ? items.indexOf(activeItem) : -1;
+  // Index -1 = Everyone, 0+ = contacts
+  let currentIndex = isEveryoneView ? -1 : items.findIndex(li => li.classList.contains('active'));
 
   if (e.key === 'ArrowDown') {
-    currentIndex = currentIndex < items.length - 1 ? currentIndex + 1 : 0;
+    if (currentIndex < items.length - 1) {
+      currentIndex++;
+    } else {
+      currentIndex = -1; // Wrap to Everyone
+    }
   } else if (e.key === 'ArrowUp') {
-    currentIndex = currentIndex > 0 ? currentIndex - 1 : items.length - 1;
+    if (currentIndex > -1) {
+      currentIndex--;
+    } else {
+      currentIndex = items.length - 1; // Wrap to last contact
+    }
   }
 
-  const targetItem = items[currentIndex];
-  if (targetItem) {
-    targetItem.scrollIntoView({ block: 'nearest' });
-    loadContact(
-      targetItem.dataset.filename,
-      targetItem.dataset.name,
-      parseInt(targetItem.dataset.total),
-      parseInt(targetItem.dataset.sent),
-      parseInt(targetItem.dataset.received),
-      targetItem.dataset.first
-    );
+  if (currentIndex === -1) {
+    // Select Everyone
+    currentYearFilter = 'all';
+    loadEveryone();
+  } else {
+    const targetItem = items[currentIndex];
+    if (targetItem) {
+      targetItem.scrollIntoView({ block: 'nearest' });
+      loadContact(
+        targetItem.dataset.filename,
+        targetItem.dataset.name,
+        parseInt(targetItem.dataset.total),
+        parseInt(targetItem.dataset.sent),
+        parseInt(targetItem.dataset.received),
+        targetItem.dataset.first
+      );
+    }
   }
 });
 
@@ -604,11 +870,45 @@ toggleButtons.forEach(btn => {
   });
 });
 
+// Handle browser back/forward navigation
+window.addEventListener('popstate', () => {
+  const hash = window.location.hash.slice(1);
+  isNavigatingFromPopState = true;
+
+  if (hash === 'everyone' || hash === '') {
+    currentYearFilter = 'all';
+    loadEveryone();
+  } else if (hash.startsWith('everyone/')) {
+    const year = hash.split('/')[1];
+    if (everyoneData && everyoneData.years.includes(year)) {
+      currentYearFilter = year;
+    } else {
+      currentYearFilter = 'all';
+    }
+    loadEveryone();
+  } else {
+    // Contact view
+    const contact = contacts.find(c => c.filename === hash);
+    if (contact) {
+      loadContact(contact.filename, contact.name, contact.total, contact.sent, contact.received, contact.first_date);
+    } else {
+      currentYearFilter = 'all';
+      loadEveryone();
+    }
+  }
+});
+
 // Initialize
 async function init() {
   try {
-    const response = await fetch('data/contacts.json');
-    contacts = await response.json();
+    // Load contacts and everyone data in parallel
+    const [contactsResponse, everyoneResponse] = await Promise.all([
+      fetch('data/contacts.json'),
+      fetch('data/everyone.json')
+    ]);
+
+    contacts = await contactsResponse.json();
+    everyoneData = await everyoneResponse.json();
 
     // Apply fake names for screenshots
     if (FAKE_MODE) {
@@ -619,9 +919,26 @@ async function init() {
 
     renderContacts();
 
-    // Restore selection from URL hash
+    // Update Everyone tab with total
+    everyoneTotal.textContent = `${formatNumber(everyoneData.total_sent + everyoneData.total_received)} messages`;
+    renderYearFilter(everyoneData.years);
+
+    // Restore selection from URL hash (don't push to history on initial load)
     const hash = window.location.hash.slice(1);
-    if (hash) {
+    isNavigatingFromPopState = true;
+
+    if (hash === 'everyone' || hash === '') {
+      // Default to Everyone view
+      loadEveryone();
+    } else if (hash.startsWith('everyone/')) {
+      // Everyone view with year filter
+      const year = hash.split('/')[1];
+      if (everyoneData.years.includes(year)) {
+        currentYearFilter = year;
+      }
+      loadEveryone();
+    } else {
+      // Contact view
       const contact = contacts.find(c => c.filename === hash);
       if (contact) {
         loadContact(contact.filename, contact.name, contact.total, contact.sent, contact.received, contact.first_date);
@@ -630,10 +947,13 @@ async function init() {
         if (activeItem) {
           activeItem.scrollIntoView({ block: 'nearest' });
         }
+      } else {
+        // Invalid hash, default to Everyone
+        loadEveryone();
       }
     }
   } catch (err) {
-    console.error('Failed to load contacts:', err);
+    console.error('Failed to load data:', err);
     contactList.innerHTML = '<li>run ./scripts/start first</li>';
   }
 }

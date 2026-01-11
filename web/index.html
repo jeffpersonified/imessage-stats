@@ -9,6 +9,10 @@
 </head>
 <body>
   <aside class="sidebar">
+    <div id="everyone-tab" class="everyone-tab">
+      <div class="tab-name">iMessage Stats</div>
+      <div class="tab-meta" id="everyone-total"></div>
+    </div>
     <input type="text" id="search" placeholder="Search...">
     <ul id="contact-list"></ul>
   </aside>
@@ -24,6 +28,10 @@
     </header>
 
     <div id="chart-container" style="display: none;">
+      <section id="year-filter-section" class="year-filter-section" style="display: none;">
+        <div id="year-filter" class="year-filter-grid"></div>
+      </section>
+
       <section class="stats">
         <div class="stat-col">
           <p id="stat-total"></p>
@@ -44,6 +52,28 @@
         <p id="response-time"></p>
       </section>
 
+      <section id="top-contacts-section" class="top-contacts-section" style="display: none;">
+        <h2>Top contacts in <span id="top-contacts-year"></span></h2>
+        <div id="top-contacts" class="top-contacts-grid"></div>
+      </section>
+
+      <section id="busiest-month-section" style="display: none;">
+        <p id="busiest-month"></p>
+      </section>
+
+      <section class="chart-section">
+        <div class="section-header">
+          <h2>Messages over time</h2>
+          <div class="toggle">
+            <button data-view="year">Year</button>
+            <button data-view="month" class="active">Month</button>
+          </div>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chart"></canvas>
+        </div>
+      </section>
+
       <section class="heatmap-section">
         <div class="section-header">
           <p id="heatmap-label"></p>
@@ -62,19 +92,6 @@
             <canvas id="heatmap"></canvas>
             <div id="heatmap-tooltip"></div>
           </div>
-        </div>
-      </section>
-
-      <section class="chart-section">
-        <div class="section-header">
-          <h2>Messages sent over time</h2>
-          <div class="toggle">
-            <button data-view="year">Year</button>
-            <button data-view="month" class="active">Month</button>
-          </div>
-        </div>
-        <div class="chart-wrapper">
-          <canvas id="chart"></canvas>
         </div>
       </section>
     </div>

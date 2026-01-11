@@ -71,19 +71,28 @@ rm -rf web/data && mkdir -p web/data && touch web/data/.gitkeep
 echo "Exporting your iMessage data..."
 python3 scripts/export.py "${EXPORT_ARGS[@]}"
 
-# Start the server in background
-echo "Starting server at http://localhost:8080 (Ctrl+C to stop)"
+# Start the server in the background
+echo "Starting server at http://localhost:8080..."
 cd web && python3 -m http.server 8080 &
 SERVER_PID=$!
+cd ..
+
+# Clean up server on exit
+trap "kill $SERVER_PID 2>/dev/null" EXIT
 
 # Wait for server to be ready
-while ! curl -s http://localhost:8080 > /dev/null 2>&1; do
+echo "Waiting for server..."
+for i in {1..30}; do
+  if curl -s -o /dev/null http://localhost:8080 2>/dev/null; then
+    break
+  fi
   sleep 0.1
 done
 
-# Open browser now that server is ready
+# Open browser once server is ready
 echo "Opening browser..."
 open "http://localhost:8080${FAKE_MODE}"
 
-# Wait for server process (keeps script running until Ctrl+C)
+# Wait for server process (Ctrl+C to stop)
+echo "Server running (Ctrl+C to stop)"
 wait $SERVER_PID
