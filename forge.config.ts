@@ -37,6 +37,7 @@ const config: ForgeConfig = {
   makers: [
     new MakerDMG({
       format: 'ULFO',
+      icon: './resources/icon.icns',
     }),
     new MakerZIP({}, ['darwin']),
   ],
