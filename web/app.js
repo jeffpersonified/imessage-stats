@@ -12,6 +12,8 @@ let currentContactYearFilter = 'all';
 let currentAnalysisYearFilter = 'all';
 let isEveryoneView = false;
 let isNavigatingFromPopState = false; // Flag to avoid duplicate history entries
+let swearWordsRevealed = false; // Persists across year filter changes once revealed
+let swearWordScrambleIntervals = []; // Intervals for per-character scramble effect
 
 // LLM theme analysis status tracking
 let llmStatus = null; // { pending: [...filenames...], completed: [...], total: N }
@@ -199,6 +201,10 @@ function formatSinceDate(dateStr) {
 async function loadContact(filename, name, total, sent, received, firstDate) {
   isEveryoneView = false;
   currentContactFilename = filename;
+  swearWordsRevealed = false; // Reset reveal state for new contact
+
+  // Clear any scramble animation from previous contact
+  clearScrambleIntervals();
 
   // Update URL hash for persistence
   if (isNavigatingFromPopState) {
@@ -280,6 +286,86 @@ function formatTime(seconds) {
   }
   const hours = Math.round(seconds / 3600);
   return `${hours} hour${hours === 1 ? '' : 's'}`;
+}
+
+// Scramble characters (letters and symbols)
+const SCRAMBLE_CHARS = 'abcdefghijklmnopqrstuvwxyz@#$%&*!?~^+';
+
+// Get a random character
+function randomChar() {
+  return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
+}
+
+// Clear all scramble intervals
+function clearScrambleIntervals() {
+  swearWordScrambleIntervals.forEach(id => clearInterval(id));
+  swearWordScrambleIntervals = [];
+}
+
+// Start the scramble animation with each character on its own timer
+function startScrambleAnimation(element, word) {
+  // Clear any existing intervals
+  clearScrambleIntervals();
+
+  const chars = Array.from({length: word.length}, () => randomChar());
+
+  // Set initial scrambled state
+  element.textContent = chars.join('');
+
+  // Create independent interval for each character position
+  // Use staggered base intervals (400-600ms) so they don't sync up
+  for (let i = 0; i < chars.length; i++) {
+    const baseInterval = 400 + Math.random() * 200; // 400-600ms per character
+    const intervalId = setInterval(() => {
+      if (element.classList.contains('obscured')) {
+        chars[i] = randomChar();
+        element.textContent = chars.join('');
+      } else {
+        clearInterval(intervalId);
+      }
+    }, baseInterval);
+    swearWordScrambleIntervals.push(intervalId);
+  }
+}
+
+// Reveal the word with sequential left-to-right animation
+function revealSwearWord(element, word) {
+  swearWordsRevealed = true;
+
+  // Stop scrambling
+  clearScrambleIntervals();
+
+  element.classList.remove('obscured');
+  element.classList.add('revealing');
+
+  const chars = word.split('');
+  let revealedCount = 0;
+
+  // Reveal one character at a time from left to right
+  const revealInterval = setInterval(() => {
+    if (revealedCount >= chars.length) {
+      clearInterval(revealInterval);
+      element.classList.remove('revealing');
+      element.classList.add('revealed');
+      element.textContent = word;
+      return;
+    }
+
+    // Build the display: revealed chars + scrambled remainder
+    const revealed = chars.slice(0, revealedCount + 1).join('');
+    const scrambledRemainder = chars.slice(revealedCount + 1).map(() => randomChar()).join('');
+
+    element.textContent = revealed + scrambledRemainder;
+    revealedCount++;
+  }, 60);
+}
+
+// Re-obscure the word and restart scramble animation
+function obscureSwearWord(element, word) {
+  swearWordsRevealed = false;
+  element.classList.remove('revealed');
+  element.classList.add('obscured');
+  startScrambleAnimation(element, word);
 }
 
 // Render conversation patterns (response times, conversation starters, profanity comparison)
@@ -378,23 +464,76 @@ function renderPatterns(data, year = 'all') {
     laughComparisonEl.textContent = '';
   }
 
-  // Profanity comparison (who swears more)
+  // Profanity comparison (who swears more, with favorite word)
+  // Clear any existing scramble animation
+  clearScrambleIntervals();
+
   const profanityData = data.analysis?.profanity;
   if (profanityData) {
     const yearData = profanityData[year] || profanityData.all || {};
     const youCount = yearData.sent || 0;
     const themCount = yearData.received || 0;
+    const topSent = yearData.top_sent?.[0];     // Your top swear word
+    const topReceived = yearData.top_received?.[0]; // Their top swear word
 
     if (youCount > 0 || themCount > 0) {
+      let mainText = '';
+      let favoriteWord = null;
+      let favoriteLabel = '';
+
       if (youCount > themCount) {
         const verb = usePastTense ? 'swore' : 'swear';
-        swearComparisonEl.innerHTML = `<span class="you">You</span> ${verb} more`;
+        mainText = `<span class="you">You</span> ${verb} more`;
+        if (topSent) {
+          favoriteWord = topSent.word;
+          favoriteLabel = 'Your favorite:';
+        }
       } else if (themCount > youCount) {
         const verb = usePastTense ? 'swore' : 'swears';
-        swearComparisonEl.innerHTML = `<span class="them">${name}</span> ${verb} more`;
+        mainText = `<span class="them">${name}</span> ${verb} more`;
+        if (topReceived) {
+          favoriteWord = topReceived.word;
+          favoriteLabel = `${name}'s favorite:`;
+        }
       } else {
         const verb = usePastTense ? 'swore' : 'swear';
-        swearComparisonEl.textContent = `You both ${verb} equally`;
+        mainText = `You both ${verb} equally`;
+        // Show your favorite if tied
+        if (topSent) {
+          favoriteWord = topSent.word;
+          favoriteLabel = 'Your favorite:';
+        }
+      }
+
+      // Add favorite swear word (matrix scramble until clicked)
+      if (favoriteWord) {
+        const stateClass = swearWordsRevealed ? 'revealed' : 'obscured';
+        const displayWord = swearWordsRevealed ? favoriteWord : ''; // Will be set by animation
+        mainText += `. <span class="favorite-swear">${favoriteLabel} <span class="swear-word ${stateClass}" data-word="${favoriteWord}">${displayWord}</span></span>`;
+      }
+
+      swearComparisonEl.innerHTML = mainText;
+
+      // Set up the swear word element with toggle behavior
+      const swearWordEl = swearComparisonEl.querySelector('.swear-word');
+      if (swearWordEl && favoriteWord) {
+        if (!swearWordsRevealed) {
+          // Start matrix scramble animation
+          startScrambleAnimation(swearWordEl, favoriteWord);
+        } else {
+          // Already revealed, just show the word
+          swearWordEl.textContent = favoriteWord;
+        }
+
+        // Click to toggle between revealed and obscured
+        swearWordEl.addEventListener('click', () => {
+          if (swearWordEl.classList.contains('obscured')) {
+            revealSwearWord(swearWordEl, favoriteWord);
+          } else if (swearWordEl.classList.contains('revealed')) {
+            obscureSwearWord(swearWordEl, favoriteWord);
+          }
+          // Ignore clicks during 'revealing' animation
+        });
       }
     } else {
       swearComparisonEl.textContent = '';

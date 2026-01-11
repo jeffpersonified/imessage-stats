@@ -910,6 +910,35 @@ section p {
   letter-spacing: 1px;
 }
 
+/* Favorite swear word reveal */
+.favorite-swear {
+  color: var(--text);
+}
+
+.swear-word {
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.swear-word.obscured {
+  cursor: pointer;
+  color: var(--text);
+}
+
+.swear-word.obscured:hover {
+  color: var(--text-bright);
+}
+
+.swear-word.revealing {
+  color: var(--text-bright);
+}
+
+.swear-word.revealed {
+  cursor: pointer;
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
 /* Ranked lists (side by side) */
 .ranked-lists {
   display: grid;
